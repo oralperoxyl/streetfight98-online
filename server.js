@@ -1,6 +1,11 @@
-cat > server.js << 'EOF'
 'use strict';
-/* Стритфайт 98 — сервер (стабильность v2) */
+/* Стритфайт 98 — сервер.
+ * Экономика игрока (жетоны, снаряжение, рейтинг) хранится в памяти по playerKey
+ * (id из Telegram либо сгенерированный и сохранённый в localStorage на клиенте).
+ * Комната = машина состояний: lobby(2 игрока) → battle(раунды) → over.
+ * Каждый раунд оба игрока выбирают оружие одновременно (сервер ждёт оба хода,
+ * потом одновременно раскрывает — никто не видит выбор соперника заранее).
+ */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -13,8 +18,10 @@ const {
 } = require('./lib');
 const db = require('./db');
 const { verifyInitData } = require('./tgAuth');
-
+const logger = require('./logger');
+const { createRateLimiter } = require('./rateLimit');
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
+
 const PORT = process.env.PORT || 3000;
 const T_MOVE = (+process.env.T_MOVE || 20) * 1000;
 const REVEAL_PAUSE = +process.env.T_REVEAL_PAUSE || 1800;
@@ -23,31 +30,20 @@ const START_TOKENS = 40;
 const WIN_TOKENS = 8, LOSS_TOKENS = 3, DRAW_TOKENS = 1;
 const WIN_RATING = 15, LOSS_RATING = -10;
 
+// Rate limit на входящие WS-сообщения: 30 сообщений за 10 секунд с одного
+// соединения — с запасом хватает на реальную игру (ходы, лутбоксы, чат),
+// но режет флуд/скрипт-спам. HEARTBEAT_MS — как часто пингуем клиентов,
+// чтобы вовремя заметить оборвавшееся соединение (не дожидаясь TCP-таймаута).
+const MSG_RATE_LIMIT = +process.env.MSG_RATE_LIMIT || 30;
+const MSG_RATE_WINDOW_MS = +process.env.MSG_RATE_WINDOW_MS || 10000;
+const HEARTBEAT_MS = +process.env.HEARTBEAT_MS || 30000;
+const wsRateLimiter = createRateLimiter(MSG_RATE_LIMIT, MSG_RATE_WINDOW_MS);
+
 const rooms = new Map();
-const economy = new Map();
+const economy = new Map(); // playerKey -> { nick, tokens, rating, wins, losses, gear }
 const queue = [];
 const uid = () => crypto.randomBytes(8).toString('hex');
 const now = () => Date.now();
-
-const logFile = fs.createWriteStream('server.log', { flags: 'a' });
-function logToFile(...args) {
-  const ts = new Date().toISOString();
-  logFile.write(`[${ts}] ${args.join(' ')}\n`);
-}
-
-// Rate limiting
-const rateLimit = new Map();
-function checkRateLimit(key, max = 40, windowMs = 60000) {
-  const n = Date.now();
-  if (!rateLimit.has(key)) rateLimit.set(key, { count: 0, reset: n + windowMs });
-  const data = rateLimit.get(key);
-  if (n > data.reset) {
-    data.count = 0;
-    data.reset = n + windowMs;
-  }
-  data.count++;
-  return data.count <= max;
-}
 
 function genCode() {
   const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -86,6 +82,10 @@ function currentStats(e) {
   return mercStats(skin, mercLevelOf(e, skin.id));
 }
 
+// Если клиент прислал initData из Telegram Mini App и она прошла проверку подписи —
+// используем настоящий Telegram id, игнорируя то, что клиент прислал в msg.key.
+// Это закрывает возможность подделать чужой профиль, отправив чужой id вручную.
+// Без initData (обычный веб-фоллбэк) доверяем анонимному ключу из localStorage клиента.
 function resolveKey(msg) {
   if (msg.initData && BOT_TOKEN) {
     const user = verifyInitData(msg.initData, BOT_TOKEN);
@@ -101,9 +101,9 @@ function other(room, id) { return room.players.find(p => p.id !== id); }
 function log(room, text) {
   const e = { text, ts: now() };
   room.log.push(e);
+  room.lastActivity = e.ts;
   if (room.log.length > 300) room.log.shift();
   broadcast(room, { t: 'log', e });
-  logToFile(`ROOM ${room.code}: ${text}`);
 }
 
 function clearTimer(room) { if (room.timer) { clearTimeout(room.timer); room.timer = null; } }
@@ -132,7 +132,7 @@ function makeRoom() {
   const room = {
     code: genCode(), players: [], phase: 'lobby', round: 0,
     hp: {}, moves: {}, deadline: 0, timer: null, killTimer: null,
-    log: [], createdAt: now(),
+    log: [], createdAt: now(), lastActivity: now(),
   };
   rooms.set(room.code, room);
   return room;
@@ -177,7 +177,7 @@ function onMove(room, p, msg) {
   if (room.phase !== 'battle' || room.moves[p.id]) return;
   if (!WEAPONS.includes(msg.weapon)) return;
   room.moves[p.id] = msg.weapon;
-  syncAll(room);
+  syncAll(room); // соперник видит "выбор сделан", но не сам выбор
   resolveIfReady(room);
 }
 
@@ -229,15 +229,15 @@ function endBattle(room, winner, loser) {
   syncAll(room);
 }
 
+/* ---------------- membership ---------------- */
 function onCreate(ws, msg) {
-  if (!checkRateLimit('create')) return ws.send(JSON.stringify({ t: 'err', text: 'Слишком часто создаёте комнаты' }));
   const key = resolveKey(msg);
   const nick = cleanText(msg.nick, 14) || 'Аноним';
   getEconomy(key, nick);
   const room = makeRoom();
   const p = addPlayer(room, ws, nick, key);
   send(p, { t: 'joined', code: room.code, token: p.token, id: p.id, econ: econPublic(getEconomy(key)) });
-  log(room, `${nick} создал комнату ${room.code}.`);
+  log(room, `${nick} создал комнату ${room.code}. Ждём соперника…`);
   syncAll(room);
 }
 
@@ -256,19 +256,129 @@ function onJoin(ws, msg) {
   else syncAll(room);
 }
 
-function onQuick(ws, msg) { /* оставил как было */ }
-function onRejoin(ws, msg) { /* оставил */ }
-function onOpenBox(ws, msg) { /* оставил */ }
-function onEquipSkin(ws, msg) { /* оставил */ }
-function onTrainMercenary(ws, msg) { /* оставил */ }
-function onIdentify(ws, msg) { /* оставил */ }
+function onQuick(ws, msg) {
+  const key = resolveKey(msg);
+  const nick = cleanText(msg.nick, 14) || 'Аноним';
+  getEconomy(key, nick);
+  if (queue.length > 0) {
+    const waiting = queue.shift();
+    if (waiting.ws.readyState !== 1) { onQuick(ws, msg); return; }
+    const room = makeRoom();
+    addPlayer(room, waiting.ws, waiting.nick, waiting.key);
+    addPlayer(room, ws, nick, key);
+    room.players.forEach(p => send(p, { t: 'joined', code: room.code, token: p.token, id: p.id, econ: econPublic(getEconomy(p.key)) }));
+    log(room, `Быстрый бой: ${room.players[0].nick} против ${room.players[1].nick}!`);
+    startBattle(room);
+  } else {
+    queue.push({ ws, nick, key });
+    send({ ws }, { t: 'queued' });
+  }
+}
 
-function onDisconnect(ws) { /* оставил */ }
+function onRejoin(ws, msg) {
+  const room = rooms.get(String(msg.code || '').toUpperCase());
+  const p = room && room.players.find(q => q.token === msg.token);
+  if (!p) { ws.send(JSON.stringify({ t: 'err', text: 'Сессия не найдена.', fatal: true })); return; }
+  p.ws = ws; p.online = true;
+  ws._room = room; ws._pid = p.id;
+  send(p, { t: 'joined', code: room.code, token: p.token, id: p.id, econ: econPublic(getEconomy(p.key)) });
+  if (room.killTimer) { clearTimeout(room.killTimer); room.killTimer = null; }
+  log(room, `${p.nick} снова в сети.`);
+  syncAll(room);
+}
 
-/* HTTP + WS */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
+function onOpenBox(ws, msg) {
+  const key = resolveKey(msg);
+  if (!key) return;
+  const e = getEconomy(key);
+  if (e.tokens < BOX_COST) { ws.send(JSON.stringify({ t: 'err', text: `Нужно ${BOX_COST} жетонов, у вас ${e.tokens}.` })); return; }
+  e.tokens -= BOX_COST;
+  const result = openLootbox(e);
+  if (result.kind === 'skin') {
+    if (result.duplicate) e.tokens += Math.floor(BOX_COST / 2); // компенсация за дубликат
+    saveEconomy(key);
+    ws.send(JSON.stringify({
+      t: 'lootbox', kind: 'skin', skinId: result.id, rarity: result.rarity, upgraded: !result.duplicate,
+      label: result.name, icon: result.icon, rarityLabel: RARITY_LABEL[result.rarity],
+      econ: econPublic(e),
+    }));
+  } else {
+    saveEconomy(key);
+    ws.send(JSON.stringify({
+      t: 'lootbox', kind: 'weapon',
+      weapon: result.weapon, rarity: result.rarity, upgraded: result.upgraded,
+      label: LABELS[result.weapon], icon: ICONS[result.weapon], rarityLabel: RARITY_LABEL[result.rarity],
+      econ: econPublic(e),
+    }));
+  }
+}
+
+function onEquipSkin(ws, msg) {
+  const key = resolveKey(msg);
+  if (!key) return;
+  const e = getEconomy(key);
+  const skinId = cleanText(msg.skinId, 32);
+  if (!e.unlockedSkins.includes(skinId)) { ws.send(JSON.stringify({ t: 'err', text: 'Этот наёмник ещё не разблокирован.' })); return; }
+  e.equippedSkin = skinId;
+  saveEconomy(key);
+  ws.send(JSON.stringify({ t: 'economy', econ: econPublic(e) }));
+}
+
+function onTrainMercenary(ws, msg) {
+  const key = resolveKey(msg);
+  if (!key) return;
+  const e = getEconomy(key);
+  const skinId = cleanText(msg.skinId, 32);
+  if (!e.unlockedSkins.includes(skinId)) { ws.send(JSON.stringify({ t: 'err', text: 'Наёмник ещё не разблокирован.' })); return; }
+  if (!e.mercLevels) e.mercLevels = {};
+  const level = e.mercLevels[skinId] || 1;
+  if (level >= MAX_MERC_LEVEL) { ws.send(JSON.stringify({ t: 'err', text: `Уже максимальный уровень (${MAX_MERC_LEVEL}).` })); return; }
+  const cost = mercTrainCost(level);
+  if (e.tokens < cost) { ws.send(JSON.stringify({ t: 'err', text: `Нужно ${cost} жетонов, у вас ${e.tokens}.` })); return; }
+  e.tokens -= cost;
+  e.mercLevels[skinId] = level + 1;
+  saveEconomy(key);
+  ws.send(JSON.stringify({ t: 'train_result', skinId, newLevel: level + 1, cost, econ: econPublic(e) }));
+}
+
+function onIdentify(ws, msg) {
+  const key = resolveKey(msg);
+  const nick = cleanText(msg.nick, 14) || 'Аноним';
+  const e = getEconomy(key, nick);
+  ws.send(JSON.stringify({ t: 'economy', key, econ: econPublic(e) }));
+}
+
+function onDisconnect(ws) {
+  const qi = queue.findIndex(q => q.ws === ws);
+  if (qi >= 0) queue.splice(qi, 1);
+  const room = ws._room;
+  if (!room) return;
+  const p = room.players.find(q => q.id === ws._pid);
+  if (!p || p.ws !== ws) return;
+  p.online = false;
+  log(room, `${p.nick} отключился.`);
+  if (!room.players.some(q => q.online)) {
+    room.killTimer = setTimeout(() => { clearTimer(room); rooms.delete(room.code); }, ROOM_TTL);
+  }
+  syncAll(room);
+}
+
+/* ---------------- wiring ---------------- */
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+const HTTP_RATE_LIMIT = +process.env.HTTP_RATE_LIMIT || 120;
+const HTTP_RATE_WINDOW_MS = +process.env.HTTP_RATE_WINDOW_MS || 60000;
+const httpRateLimiter = createRateLimiter(HTTP_RATE_LIMIT, HTTP_RATE_WINDOW_MS);
+
 const server = http.createServer((req, res) => {
   if (req.url === '/health') { res.writeHead(200); res.end('ok'); return; }
+  const ip = req.socket.remoteAddress || 'unknown';
+  const rl = httpRateLimiter.check(ip);
+  if (!rl.allowed) {
+    logger.warn({ ip }, 'HTTP rate limit превышен');
+    res.writeHead(429, { 'Retry-After': Math.ceil(rl.retryAfterMs / 1000) });
+    res.end('too many requests');
+    return;
+  }
   let file = req.url.split('?')[0];
   if (file === '/') file = '/index.html';
   const fp = path.join(__dirname, 'public', path.normalize(file).replace(/^(\.\.[/\\])+/, ''));
@@ -280,45 +390,76 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });
-
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  ws._rlKey = uid(); // ключ для rate-лимитера — свой на каждое соединение, ещё до identify
   ws.isAlive = true;
-  ws.on('pong', () => ws.isAlive = true);
+  ws.on('pong', () => { ws.isAlive = true; });
+
+  logger.info({ ip: req.socket.remoteAddress }, 'WS подключение открыто');
 
   ws.on('message', raw => {
+    const rl = wsRateLimiter.check(ws._rlKey);
+    if (!rl.allowed) {
+      logger.warn({ rlKey: ws._rlKey }, 'Rate limit превышен — сообщение отброшено');
+      ws.send(JSON.stringify({ t: 'err', text: 'Слишком много запросов, помедленнее.' }));
+      return;
+    }
     let msg; try { msg = JSON.parse(raw); } catch (_) { return; }
-    if (!checkRateLimit(`ws:${ws._pid || 'anon'}`)) return;
     const room = ws._room;
     const p = room && room.players.find(q => q.id === ws._pid);
     switch (msg.t) {
-      case 'identify': onIdentify(ws, msg); break;
-      case 'create': if (!room) onCreate(ws, msg); break;
-      case 'join': if (!room) onJoin(ws, msg); break;
-      case 'quick': if (!room) onQuick(ws, msg); break;
-      case 'rejoin': if (!room) onRejoin(ws, msg); break;
-      case 'move': if (p) onMove(room, p, msg); break;
-      case 'open_box': onOpenBox(ws, msg); break;
-      case 'equip_skin': onEquipSkin(ws, msg); break;
+      case 'identify':  onIdentify(ws, msg); break;
+      case 'create':    if (!room) onCreate(ws, msg); break;
+      case 'join':      if (!room) onJoin(ws, msg); break;
+      case 'quick':     if (!room) onQuick(ws, msg); break;
+      case 'rejoin':    if (!room) onRejoin(ws, msg); break;
+      case 'move':      if (p) onMove(room, p, msg); break;
+      case 'open_box':  onOpenBox(ws, msg); break;
+      case 'equip_skin':onEquipSkin(ws, msg); break;
       case 'train_mercenary': onTrainMercenary(ws, msg); break;
     }
   });
-
-  ws.on('close', () => onDisconnect(ws));
+  ws.on('close', () => { wsRateLimiter.reset(ws._rlKey); onDisconnect(ws); });
+  ws.on('error', err => logger.warn({ err: err.message }, 'WS ошибка соединения'));
 });
 
-// Heartbeat
+// Heartbeat: пингуем все соединения раз в HEARTBEAT_MS. Если клиент не ответил
+// pong'ом с прошлого пинга — считаем соединение мёртвым и рвём его сами, не
+// дожидаясь TCP-таймаута (это может занимать минуты и держать комнату
+// "как будто живой" всё это время). ws.terminate() запускает 'close' →
+// onDisconnect(ws) выполнит обычную очистку.
 setInterval(() => {
   wss.clients.forEach(ws => {
-    if (ws.isAlive === false) return ws.terminate();
+    if (ws.isAlive === false) { logger.info({ rlKey: ws._rlKey }, 'Heartbeat не отвечен — обрываем соединение'); return ws.terminate(); }
     ws.isAlive = false;
     ws.ping();
   });
-}, 30000);
+}, HEARTBEAT_MS);
 
 (async () => {
   await db.init();
   const loaded = await db.loadAll();
   for (const [key, value] of loaded) economy.set(key, value);
-  server.listen(PORT, () => console.log(`Стритфайт 98 online: http://localhost:${PORT}`));
-})().catch(err => console.error('Ошибка инициализации:', err.message));
-EOF
+  if (!BOT_TOKEN) logger.warn('BOT_TOKEN не задан — проверка подписи Telegram отключена, профили доверяют клиенту.');
+  server.listen(PORT, () => logger.info({ port: PORT, dbEnabled: db.isEnabled() }, 'Стритфайт 98 online'));
+})().catch(err => {
+  logger.error({ err }, 'Ошибка инициализации БД');
+  server.listen(PORT, () => logger.info({ port: PORT, dbEnabled: false }, 'Стритфайт 98 online (без БД)'));
+});
+
+// Периодическая уборка: страховка поверх точечной TTL-очистки в onDisconnect —
+// если по какой-то причине комната осталась без активного killTimer (баг,
+// гонка состояний, ручное вмешательство), эта проверка рано или поздно её найдёт.
+// Также чистит карту rate-лимитера от давно неактивных ключей.
+const SWEEP_INTERVAL_MS = 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  let removedRooms = 0;
+  for (const [code, room] of rooms.entries()) {
+    const allOffline = room.players.every(p => !p.online);
+    const stale = now - (room.lastActivity || room.createdAt) > ROOM_TTL;
+    if (allOffline && stale) { clearTimer(room); rooms.delete(code); removedRooms++; }
+  }
+  wsRateLimiter.sweep();
+  if (removedRooms > 0) logger.info({ removedRooms, activeRooms: rooms.size }, 'Плановая уборка комнат');
+}, SWEEP_INTERVAL_MS);

@@ -43,6 +43,12 @@ node server.js        # http://localhost:3000
 | BOT_TOKEN | — | токен бота из BotFather; без него профили доверяют клиенту (как раньше) |
 | DATABASE_URL | — | строка подключения к Postgres; без неё прогресс живёт только в памяти процесса |
 | PGSSL | on | поставь `off`, если Postgres не требует SSL (например, локальная разработка) |
+| LOG_LEVEL | info | уровень логирования pino: trace/debug/info/warn/error/silent |
+| MSG_RATE_LIMIT | 30 | максимум WS-сообщений с одного соединения за окно |
+| MSG_RATE_WINDOW_MS | 10000 | длина окна для MSG_RATE_LIMIT, мс |
+| HTTP_RATE_LIMIT | 120 | максимум HTTP-запросов с одного IP за окно (раздача статики) |
+| HTTP_RATE_WINDOW_MS | 60000 | длина окна для HTTP_RATE_LIMIT, мс |
+| HEARTBEAT_MS | 30000 | как часто пинговать WS-клиентов для обнаружения оборвавшихся соединений |
 
 ## Профиль игрока и сохранение прогресса
 
@@ -63,8 +69,27 @@ node server.js        # http://localhost:3000
 
 ```bash
 PORT=3300 T_MOVE=8 T_REVEAL_PAUSE=100 node server.js &
-node test/e2e.js   # PASS = бой сыгран до победы + лутбокс списал 20 жетонов
+node test/e2e.js                     # бой сыгран до победы + лутбокс списал 20 жетонов
+node test/rate-limit.test.js         # логика rate-лимитера (без сети)
+BOT_TOKEN=... node test/auth-and-db.test.js   # подделать чужой профиль нельзя
+MSG_RATE_LIMIT=5 MSG_RATE_WINDOW_MS=2000 HEARTBEAT_MS=1000 node test/stability.integration.js
 ```
+
+## Стабильность и надёжность
+
+- **Rate limiting**: свой лимит на WS-сообщения с одного соединения
+  (`MSG_RATE_LIMIT` за `MSG_RATE_WINDOW_MS`) и на HTTP-запросы с одного IP
+  (`HTTP_RATE_LIMIT`/`HTTP_RATE_WINDOW_MS`) — простой sliding-window в памяти
+  (`rateLimit.js`), без внешних зависимостей.
+- **Heartbeat**: сервер пингует каждое WS-соединение раз в `HEARTBEAT_MS`;
+  если клиент не ответил pong'ом с прошлого пинга — соединение считается
+  мёртвым и обрывается сразу, не дожидаясь TCP-таймаута (который может
+  занимать минуты и держать комнату "как будто живой").
+- **Уборка комнат**: точечная TTL-очистка при обычном дисконнекте плюс
+  плановый sweep раз в минуту как страховка — на случай, если по какой-то
+  причине комната осталась без активного таймера очистки.
+- **Логирование**: структурированные JSON-логи через `pino` (`logger.js`),
+  уровень настраивается через `LOG_LEVEL`.
 
 ## Деплой на Railway (отдельный сервис)
 

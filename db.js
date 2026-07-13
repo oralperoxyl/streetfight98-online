@@ -6,6 +6,7 @@
  * ничего не ломается, просто прогресс не переживёт перезапуск.
  */
 const { Pool } = require('pg');
+const logger = require('./logger');
 
 let pool = null;
 
@@ -13,7 +14,7 @@ function isEnabled() { return !!process.env.DATABASE_URL; }
 
 async function init() {
   if (!isEnabled()) {
-    console.log('DATABASE_URL не задан — работаем в памяти, без сохранения между перезапусками.');
+    logger.warn('DATABASE_URL не задан — работаем в памяти, без сохранения между перезапусками.');
     return;
   }
   const useSSL = process.env.PGSSL !== 'off';
@@ -28,7 +29,7 @@ async function init() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  console.log('База данных подключена, таблица players готова.');
+  logger.info('База данных подключена, таблица players готова.');
 }
 
 // Загружает всех игроков в Map (key -> economy object) при старте сервера.
@@ -37,7 +38,7 @@ async function loadAll() {
   if (!pool) return map;
   const res = await pool.query('SELECT key, data FROM players');
   for (const row of res.rows) map.set(row.key, row.data);
-  console.log(`Загружено профилей из БД: ${res.rows.length}`);
+  logger.info({ count: res.rows.length }, 'Загружено профилей из БД');
   return map;
 }
 
@@ -48,7 +49,7 @@ function persist(key, economyObj) {
   pool.query(
     'INSERT INTO players (key, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (key) DO UPDATE SET data = $2, updated_at = now()',
     [key, economyObj]
-  ).catch(err => console.error('Ошибка сохранения профиля', key, err.message));
+  ).catch(err => logger.error({ key, err: err.message }, 'Ошибка сохранения профиля'));
 }
 
 async function close() { if (pool) await pool.end(); }
