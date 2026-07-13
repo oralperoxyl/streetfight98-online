@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Стритфайт 98</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0612; --card:#1c1424; --card2:#251e26;
+  --neon-pink:#ff2f92; --neon-green:#39ff14; --neon-yellow:#ffe73d; --neon-blue:#00f0ff;
+  --text:#eafeff; --muted:#8c86a8; --danger:#ff3b3b;
+  --font-head:'Press Start 2P',monospace; --font-body:'VT323',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;image-rendering:pixelated}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);font-size:20px;background:var(--bg);color:var(--text);
+  min-height:100%;display:flex;flex-direction:column;align-items:center;
+  padding:14px 10px 30px;user-select:none;position:relative;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,.35) 1px, transparent 1px, transparent 4px),
+    radial-gradient(ellipse at 50% 0%, #2a1840 0%, #0a0612 70%);
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px, transparent 2px, transparent 3px);
+}
+.card{
+  width:100%;max-width:420px;background:var(--card);border:3px solid #000;border-radius:0;
+  padding:16px;margin-bottom:14px;position:relative;
+  box-shadow:5px 5px 0 #000, 0 0 0 1px #4a3a5a inset;
+}
+.card::before{content:"";position:absolute;top:-3px;left:-3px;right:-3px;height:5px;
+  background:repeating-linear-gradient(90deg,var(--neon-pink) 0 8px,var(--neon-blue) 8px 16px,var(--neon-green) 16px 24px);}
+h1{font-family:var(--font-head);font-size:19px;line-height:1.6;letter-spacing:0;color:var(--neon-yellow);
+  text-shadow:3px 3px 0 #000;text-align:center;margin-bottom:10px}
+h2{font-family:var(--font-head);font-size:14px;line-height:1.6;color:var(--neon-pink);text-shadow:2px 2px 0 #000;margin-bottom:12px}
+.tag{font-size:14px;color:var(--muted);text-align:center;letter-spacing:2px;text-transform:uppercase;margin-bottom:14px}
+label.lb{display:block;font-size:15px;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:1px}
+input.f{
+  width:100%;min-height:42px;padding:8px 12px;border:3px solid #000;border-radius:0;
+  background:#0f0c0f;color:var(--text);font-family:var(--font-body);font-size:19px;
+  box-shadow:2px 2px 0 #4a3a5a inset;
+}
+input.f:focus{outline:none;border-color:var(--neon-pink)}
+button.b{
+  font-family:var(--font-body);font-weight:400;text-transform:uppercase;letter-spacing:1px;
+  min-height:46px;padding:9px 16px;border:3px solid #000;border-radius:0;font-size:18px;
+  background:#1c1424;color:var(--neon-pink);cursor:pointer;
+  box-shadow:4px 4px 0 #000, 0 0 0 2px var(--neon-pink) inset;
+  transition:none;
+}
+button.b:active:not(:disabled){transform:translate(4px,4px);box-shadow:0 0 0 2px var(--neon-pink) inset}
+button.b:disabled{opacity:.35;cursor:default}
+button.b.green{color:var(--neon-green);box-shadow:4px 4px 0 #000, 0 0 0 2px var(--neon-green) inset}
+button.b.green:active:not(:disabled){box-shadow:0 0 0 2px var(--neon-green) inset}
+button.b.blue{color:var(--neon-blue);box-shadow:4px 4px 0 #000, 0 0 0 2px var(--neon-blue) inset}
+button.b.blue:active:not(:disabled){box-shadow:0 0 0 2px var(--neon-blue) inset}
+button.b.wide{display:block;width:100%}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.hint{font-size:16px;color:var(--muted);line-height:1.4;margin-top:8px}
+.hidden{display:none!important}
+.mt{margin-top:12px}
+.code{font-family:var(--font-head);letter-spacing:5px;font-size:22px;text-align:center;padding:10px;color:var(--neon-green);text-shadow:3px 3px 0 #000}
+.ic{width:24px;height:24px;display:inline-block;vertical-align:middle}
+
+/* economy bar */
+.econbar{display:flex;justify-content:space-between;align-items:center;font-size:15px;color:var(--muted);
+  border-top:2px dashed #4a3a5a;padding-top:8px;margin-top:12px}
+.econbar b{color:var(--neon-yellow)}
+
+/* HP bars — segmented 8-bit fighting-game style */
+.fighter{margin-bottom:12px}
+.fname{display:flex;justify-content:space-between;font-size:16px;margin-bottom:4px}
+.fname .nm{font-weight:400}
+.hpouter{height:18px;background:#0f0c0f;border:3px solid #000;border-radius:0;overflow:hidden;position:relative}
+.hpinner{height:100%;background:var(--neon-green);transition:width .4s steps(10)}
+.hpinner::after{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg, transparent 0 7px, #000 7px 8px);}
+.hpinner.low{background:var(--danger)}
+.hpinner.me{background:var(--neon-pink)}
+.hpinner.me.low{background:var(--danger)}
+
+/* weapon wheel */
+.wheel{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:12px}
+.wbtn{
+  aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:#0f0c0f;border:3px solid #000;border-radius:0;cursor:pointer;position:relative;
+  box-shadow:3px 3px 0 #000, 0 0 0 1px #4a3a5a inset;
+}
+.wbtn .ic{width:26px;height:26px}
+.wbtn .nm{font-size:12px;color:var(--muted);text-transform:uppercase}
+.wbtn .rr{position:absolute;top:2px;right:4px;font-size:10px}
+.wbtn.sel{box-shadow:3px 3px 0 #000, 0 0 0 2px var(--neon-pink) inset;background:#241221}
+.wbtn:disabled{opacity:.4;cursor:default}
+.rare-common .rr{color:#9a9a9a}
+.rare-rare .rr{color:var(--neon-blue)}
+.rare-epic .rr{color:#c874ff}
+.rare-legendary .rr{color:var(--neon-yellow)}
+
+/* skins */
+.skingrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.skinbtn{
+  aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:#0f0c0f;border:3px solid #000;border-radius:0;cursor:pointer;position:relative;padding:2px;
+  box-shadow:3px 3px 0 #000, 0 0 0 1px #4a3a5a inset;
+}
+.skinbtn .ic{width:24px;height:24px}
+.skinbtn .nm{font-size:10px;color:var(--muted);text-transform:uppercase;text-align:center;line-height:1.1}
+.skinbtn.equipped{box-shadow:3px 3px 0 #000, 0 0 0 2px var(--neon-green) inset;background:#122418}
+.skinbtn .lvl{font-size:10px;color:var(--neon-blue);position:absolute;bottom:2px;right:4px}
+.skinbtn.locked{opacity:.35;cursor:default}
+.skinbtn.locked .ic{filter:grayscale(1)}
+.skin-badge{display:inline-flex;vertical-align:middle;margin-right:4px}
+.skin-badge svg{width:18px;height:18px;vertical-align:middle}
+.turninfo{padding:8px 10px;background:#0f0c0f;border:2px dashed #4a3a5a;border-radius:0;font-size:16px;margin:8px 0}
+.cd{font-family:var(--font-head);font-size:11px;color:var(--neon-blue)}
+.chat{max-height:14vh;overflow-y:auto;padding:6px;font-size:15px;line-height:1.4;background:#0f0c0f;border:2px solid #4a3a5a;border-radius:0;margin-top:8px}
+.msg{color:var(--muted)}
+
+/* lootbox */
+.boxresult{text-align:center;padding:16px 8px}
+.boxresult .ic{width:56px;height:56px;margin:0 auto}
+.boxresult .rn{font-family:var(--font-head);font-size:13px;line-height:1.6;margin-top:10px}
+.boxresult.rare-common .rn{color:#9a9a9a}
+.boxresult.rare-rare .rn{color:var(--neon-blue)}
+.boxresult.rare-epic .rn{color:#c874ff}
+.boxresult.rare-legendary .rn{color:var(--neon-yellow);text-shadow:2px 2px 0 #000}
+
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;padding:14px;z-index:50}
+.overlay.open{display:flex}
+.dlg{width:100%;max-width:340px}
+.dlg-btns{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<!-- ============ MENU ============ -->
+<div class="card" id="scr-menu">
+  <h1>СТРИТФАЙТ 98</h1>
+  <div class="tag">камень • ножницы • бумага • ящерица • спок</div>
+  <label class="lb" for="nick">Позывной</label>
+  <input class="f" id="nick" maxlength="14" autocomplete="off" placeholder="Аноним">
+  <button class="b green wide mt" onclick="quickMatch()">Быстрый бой</button>
+  <button class="b wide mt" onclick="createRoom()">Вызвать друга (по коду)</button>
+  <div class="row mt">
+    <input class="f" id="joincode" maxlength="5" placeholder="КОД" style="text-transform:uppercase" autocomplete="off">
+    <button class="b blue" style="flex:0 0 96px" onclick="joinRoom()">Войти</button>
+  </div>
+  <button class="b wide mt" onclick="show('shop')" id="lootboxbtn"><span id="lootboxicon" style="display:inline-flex;vertical-align:middle;margin-right:6px"></span>Лутбоксы</button>
+  <div class="hint" id="menuhint">Быстрый бой сведёт со случайным соперником. Или пришлите код другу.</div>
+  <div class="econbar" id="econbar-menu"></div>
+</div>
+
+<!-- ============ SHOP ============ -->
+<div class="card hidden" id="scr-shop">
+  <h2>Лутбоксы</h2>
+  <div class="hint">Жетоны копятся за победы (и немного за поражения). Открывайте боксы, чтобы улучшить снаряжение — редкое оружие бьёт больнее. Изредка бокс выдаёт эксклюзивный скин персонажа вместо оружия.</div>
+  <div class="wheel mt" id="geargrid"></div>
+  <button class="b green wide mt" id="boxbtn" onclick="openBox()">Открыть бокс — <span id="boxcost"></span> жетонов</button>
+  <h2 class="mt">Наёмники</h2>
+  <div class="hint">Каждый наёмник — это не просто картинка: у него свой запас HP и бонус к урону. Часть открывается прогрессом (победы, рейтинг), часть — только из лутбоксов. Тренируйте за жетоны, чтобы поднять уровень.</div>
+  <div class="skingrid mt" id="skingrid"></div>
+  <button class="b wide mt" onclick="show('menu')">Назад</button>
+  <div class="econbar" id="econbar-shop"></div>
+</div>
+
+<!-- ============ WAITING ============ -->
+<div class="card hidden" id="scr-wait">
+  <h2>Ждём соперника</h2>
+  <div class="hint" style="margin:0 0 4px">Код комнаты (нажмите, чтобы скопировать ссылку):</div>
+  <div class="code" onclick="copyInvite()" id="roomcode">—</div>
+  <div class="hint">Пришлите код другу или ссылку в Telegram.</div>
+</div>
+
+<!-- ============ BATTLE ============ -->
+<div class="card hidden" id="scr-battle">
+  <h2 id="battletitle">Бой</h2>
+  <div class="fighter">
+    <div class="fname"><span class="nm" id="oppname">Соперник</span><span id="opphp">100/100</span></div>
+    <div class="hpouter"><div class="hpinner" id="opphpbar" style="width:100%"></div></div>
+  </div>
+  <div class="fighter">
+    <div class="fname"><span class="nm" id="myname">Вы</span><span id="myhp">100/100</span></div>
+    <div class="hpouter"><div class="hpinner me" id="myhpbar" style="width:100%"></div></div>
+  </div>
+  <div class="turninfo" id="turnbanner">Выберите оружие! <span class="cd" id="movecd"></span></div>
+  <div class="wheel" id="wheel"></div>
+  <div class="chat" id="chat"></div>
+</div>
+
+<!-- ============ generic dialog ============ -->
+<div class="overlay" id="ovl">
+  <div class="card dlg">
+    <h2 id="dlg-title">Стритфайт</h2>
+    <div id="dlg-msg" style="font-size:14px;line-height:1.5"></div>
+    <div class="dlg-btns" id="dlg-btns"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const J = o => JSON.stringify(o);
+
+/* ================= pixel-art sprites (no emoji) ================= */
+const PX = {
+  rock:      { rows:["..1111..",".122221.","12222221","12222221","12222221",".122221.","..1111..","........"], pal:{1:"#000",2:"#8a8a92"} },
+  paper:     { rows:["1111111.","1222221.","1211121.","1222221.","1211121.","1222221.","1111111.","........"], pal:{1:"#000",2:"#f0f0f0"} },
+  scissors:  { rows:["2......2",".2....2.","..2..2..","...22...","...22...","..2..2..",".2....2.","2......2"], pal:{2:"#cfd8dc"} },
+  lizard:    { rows:["........","..22....",".2222...","22..22..","..22.22.","...22.22","....22..","........"], pal:{2:"#39ff14"} },
+  spock:     { rows:["3......3","3......3",".3....3.",".3....3.","..3.3...","..3.3...","...3....","...3...."], pal:{3:"#ffe73d"} },
+  gift:      { rows:["........",".111111.","12222221","12111121","12222221","12111121","12222221",".111111."], pal:{1:"#000",2:"#ff2f92"} },
+  smiley:    { rows:["..1111..",".2222221","21.11.12","22222222","21.11.12","21111112","..1111..","........"], pal:{1:"#000",2:"#ffe73d"} },
+  mic:       { rows:["...22...","..2222..","..2222..","..2222..","..2222..",".222222.","...22...","..2222.."], pal:{2:"#a8a8b0"} },
+  glove:     { rows:["..1111..",".133331.","13333331","13333331",".133331.","..1331..","..1111..","........"], pal:{1:"#000",3:"#e0393f"} },
+  guitar:    { rows:["...22...","...22...","...22...","..2222..",".444442.","4444444.",".444442.","..2222.."], pal:{2:"#5b3a29",4:"#c78a3c"} },
+  crown:     { rows:["........","5.5.5.5.","5555555.","5555555.","5555555.",".55555..","........","........"], pal:{5:"#ffd700"} },
+  medal:     { rows:["..1111..",".1666661","16666661","16.11.61","16666661",".1666661","..1111..","...11..."], pal:{1:"#000",6:"#c0c0c0"} },
+  wheel:     { rows:["..1111..",".1....1.","1.1111.1","1.1..1.1","1.1111.1",".1....1.","..1111..","........"], pal:{1:"#7a7a84"} },
+  headphone: { rows:["77....77","7......7","7......7","77777777",".7....7.","77....77","77....77","........"], pal:{7:"#00c8ff"} },
+  spraycan:  { rows:["..1111..","..8998..",".8998998",".8998998",".8998998",".8998998",".8998998","..1111.."], pal:{1:"#000",8:"#ff2f92",9:"#7c3aed"} },
+  boombox:   { rows:["11111111","1a....a1","1a1111a1","1a....a1","11111111","........","........","........"], pal:{1:"#000",a:"#ffa733"} },
+  bolt:      { rows:["....11..","...11...","..11111.",".11.....","11111...","...11...","..11....",".11....."], pal:{1:"#ffe73d"} },
+};
+function pixelSVG(name, colorOverride){
+  const spec = PX[name]; if(!spec) return "";
+  const pal = colorOverride ? Object.assign({}, spec.pal, colorOverride) : spec.pal;
+  let rects = "";
+  spec.rows.forEach((row,y)=>{
+    for(let x=0;x<8;x++){
+      const c = row[x];
+      if(c && c!=="." && pal[c]) rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${pal[c]}"/>`;
+    }
+  });
+  return `<svg viewBox="0 0 8 8" class="ic">${rects}</svg>`;
+}
+const WEAPON_SPRITE = { rock:'rock', paper:'paper', scissors:'scissors', lizard:'lizard', spock:'spock' };
+const MERC_SPRITE = {
+  rookie:['smiley'], trainee:['mic'], streetfighter:['glove'], veteran:['guitar'], legend:['crown'],
+  bronze:['medal',{6:'#cd7f32'}], silver:['medal',{6:'#c0c0c0'}], gold:['medal',{6:'#ffd700'}], platinum:['medal',{6:'#e5e4e2'}],
+  biker:['wheel'], dj:['headphone'], graffiti:['spraycan'], boombox:['boombox'], neonpunk:['bolt'],
+};
+function mercIcon(id){ const m = MERC_SPRITE[id]||['smiley']; return pixelSVG(m[0], m[1]); }
+
+const WEAPONS = ['rock','paper','scissors','lizard','spock'];
+const LABELS = { rock:'Камень', paper:'Бумага', scissors:'Ножницы', lizard:'Ящерица', spock:'Спок' };
+const RARITY_ICON = { common:'●', rare:'◆', epic:'★', legendary:'✦' };
+const BOX_COST = 20;
+const MAX_MERC_LEVEL = 5;
+const TRAIN_BASE_COST = 5;
+const ALL_SKINS = [
+  { id:'rookie', name:'Новичок', hint:'по умолчанию', hpDelta:0, dmgDelta:0 },
+  { id:'trainee', name:'Панк-стажёр', hint:'3 победы', hpDelta:5, dmgDelta:0 },
+  { id:'streetfighter', name:'Уличный боец', hint:'10 побед', hpDelta:0, dmgDelta:1 },
+  { id:'veteran', name:'Ветеран квартала', hint:'25 побед', hpDelta:10, dmgDelta:1 },
+  { id:'legend', name:'Легенда двора', hint:'50 побед', hpDelta:15, dmgDelta:2 },
+  { id:'bronze', name:'Бронзовый ранг', hint:'рейтинг 1100', hpDelta:5, dmgDelta:0 },
+  { id:'silver', name:'Серебряный ранг', hint:'рейтинг 1250', hpDelta:10, dmgDelta:1 },
+  { id:'gold', name:'Золотой ранг', hint:'рейтинг 1400', hpDelta:15, dmgDelta:1 },
+  { id:'platinum', name:'Платиновый ранг', hint:'рейтинг 1600', hpDelta:20, dmgDelta:2 },
+  { id:'biker', name:'Байкер', hint:'только из бокса', hpDelta:10, dmgDelta:1 },
+  { id:'dj', name:'Диджей', hint:'только из бокса', hpDelta:5, dmgDelta:2 },
+  { id:'graffiti', name:'Король граффити', hint:'только из бокса', hpDelta:15, dmgDelta:2 },
+  { id:'boombox', name:'Бумбокс-бунтарь', hint:'только из бокса', hpDelta:20, dmgDelta:1 },
+  { id:'neonpunk', name:'Неоновый панк', hint:'только из бокса', hpDelta:20, dmgDelta:3 },
+];
+function mercStatsPreview(skin, level){
+  const lvl = Math.max(1, level||1);
+  return { hp: 100 + (skin.hpDelta||0) + (lvl-1)*3, dmgBonus: (skin.dmgDelta||0) + (lvl-1)*1 };
+}
+let ws=null, st=null, session=null, myKey=null, econ=null, moved=false;
+
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
+
+function getKey(){
+  if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) return 'tg:'+tg.initDataUnsafe.user.id;
+  let k = localStorage.getItem('streetfight98_key');
+  if(!k){ k = 'web:'+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('streetfight98_key', k); }
+  return k;
+}
+// initData — подписанная строка от Telegram; сервер проверяет её и подставляет настоящий id,
+// так что подделать чужой key через консоль браузера больше нельзя внутри Telegram.
+function tgInitData(){ return (tg && tg.initData) ? tg.initData : undefined; }
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ================= dialogs ================= */
+function dlg(title,msg,buttons){
+  $("dlg-title").textContent=title; $("dlg-msg").innerHTML=msg;
+  const box=$("dlg-btns"); box.innerHTML="";
+  (buttons||[{t:"ОК"}]).forEach((b,i)=>{
+    const el=document.createElement("button");
+    el.className="b"+(i===0?" green":""); el.textContent=b.t;
+    el.onclick=()=>{closeDlg(); if(b.fn)b.fn();};
+    box.appendChild(el);
+  });
+  $("ovl").classList.add("open");
+}
+function closeDlg(){ $("ovl").classList.remove("open"); }
+
+/* ================= net ================= */
+function connect(onOpen){
+  const proto = location.protocol==="https:" ? "wss" : "ws";
+  ws = new WebSocket(proto+"://"+location.host+"/ws");
+  ws.onopen = ()=>{ if(onOpen) onOpen(); };
+  ws.onclose = ()=>{
+    if(session){ setTimeout(()=>connect(()=>ws.send(J({t:"rejoin",code:session.code,token:session.token}))),1500); }
+  };
+  ws.onmessage = ev => { let m; try{ m=JSON.parse(ev.data);}catch(e){return;} handle(m); };
+}
+function startNet(fn){ if(ws && ws.readyState===1) fn(); else connect(fn); }
+function myNick(){
+  let n = $("nick").value.trim();
+  if(!n && tg && tg.initDataUnsafe && tg.initDataUnsafe.user) n = tg.initDataUnsafe.user.first_name || "";
+  return n || "Аноним";
+}
+function createRoom(){ myKey=getKey(); startNet(()=>ws.send(J({t:"create",nick:myNick(),key:myKey,initData:tgInitData()}))); }
+function joinRoom(){
+  const code = $("joincode").value.trim().toUpperCase();
+  if(code.length<5){ dlg("Ошибка","Введите код комнаты из 5 символов."); return; }
+  myKey=getKey(); startNet(()=>ws.send(J({t:"join",code,nick:myNick(),key:myKey,initData:tgInitData()})));
+}
+function quickMatch(){
+  myKey=getKey();
+  $("menuhint").textContent = "Ищем соперника…";
+  startNet(()=>ws.send(J({t:"quick",nick:myNick(),key:myKey,initData:tgInitData()})));
+}
+
+/* ================= message handling ================= */
+function handle(m){
+  switch(m.t){
+    case "joined":
+      session = { code:m.code, token:m.token };
+      econ = m.econ; renderEcon();
+      break;
+    case "queued":
+      $("menuhint").textContent = "Вы в очереди — ждём второго игрока…";
+      break;
+    case "economy":
+      econ = m.econ; renderEcon();
+      break;
+    case "state": st = m; render(); break;
+    case "log": addMsg(m.e); break;
+    case "result": showResult(m); break;
+    case "lootbox": showLootbox(m); break;
+    case "train_result":
+      econ = m.econ; renderEcon(); renderGearGrid();
+      closeDlg();
+      dlg("Тренировка", `Наёмник прокачан до уровня <b>${m.newLevel}</b>! Потрачено ${m.cost} жетонов.`, [{t:"Отлично"}]);
+      break;
+    case "err":
+      dlg("Ошибка", esc(m.text));
+      if(m.fatal){ session=null; show("menu"); }
+      break;
+  }
+}
+
+/* ================= screens ================= */
+const screens=["menu","shop","wait","battle"];
+function show(name){
+  screens.forEach(s=>$("scr-"+s).classList.toggle("hidden", s!==name));
+  if(name==="shop"){ myKey=getKey(); startNet(()=>ws.send(J({t:"identify",key:myKey,nick:myNick(),initData:tgInitData()}))); renderGearGrid(); }
+  if(name==="menu") renderEcon();
+}
+
+function renderEcon(){
+  const bar = (id) => { const el=$(id); if(!el||!econ) return; el.innerHTML = `Жетоны: <b>${econ.tokens}</b> · Рейтинг: <b>${econ.rating}</b> · W/L: ${econ.wins}/${econ.losses}`; };
+  bar("econbar-menu"); bar("econbar-shop");
+  $("boxcost") && ($("boxcost").textContent = BOX_COST);
+  $("boxbtn") && ($("boxbtn").disabled = !econ || econ.tokens < BOX_COST);
+}
+
+function renderGearGrid(){
+  const grid = $("geargrid"); if(!grid) return;
+  grid.innerHTML = "";
+  WEAPONS.forEach(w=>{
+    const rarity = (econ && econ.gear && econ.gear[w]) || 'common';
+    const div = document.createElement("div");
+    div.className = "wbtn rare-"+rarity;
+    div.innerHTML = `${pixelSVG(w)}<span class="nm">${LABELS[w]}</span><span class="rr">${RARITY_ICON[rarity]}</span>`;
+    grid.appendChild(div);
+  });
+  renderSkinGrid();
+}
+
+function renderSkinGrid(){
+  const grid = $("skingrid"); if(!grid) return;
+  grid.innerHTML = "";
+  const unlocked = (econ && econ.unlockedSkins) || ['rookie'];
+  const levels = (econ && econ.mercLevels) || {};
+  ALL_SKINS.forEach(s=>{
+    const isUnlocked = unlocked.includes(s.id);
+    const isEquipped = econ && econ.equippedSkin === s.id;
+    const lvl = levels[s.id] || 1;
+    const div = document.createElement("div");
+    div.className = "skinbtn"+(isEquipped?" equipped":"")+(!isUnlocked?" locked":"");
+    div.innerHTML = isUnlocked
+      ? `${mercIcon(s.id)}<span class="nm">${s.name}</span><span class="lvl">Ур.${lvl}</span>`
+      : `${mercIcon(s.id)}<span class="nm">${s.hint}</span>`;
+    if(isUnlocked) div.onclick = ()=>openMercDetail(s.id);
+    grid.appendChild(div);
+  });
+}
+
+function openMercDetail(skinId){
+  const s = ALL_SKINS.find(x=>x.id===skinId); if(!s) return;
+  const lvl = (econ && econ.mercLevels && econ.mercLevels[skinId]) || 1;
+  const stats = mercStatsPreview(s, lvl);
+  const nextStats = mercStatsPreview(s, Math.min(lvl+1, MAX_MERC_LEVEL));
+  const isEquipped = econ && econ.equippedSkin === skinId;
+  const maxed = lvl >= MAX_MERC_LEVEL;
+  const cost = TRAIN_BASE_COST * lvl;
+  const body = `
+    <div style="text-align:center">
+      <div style="width:56px;height:56px;margin:0 auto">${mercIcon(s.id)}</div>
+      <div style="font-family:var(--font-head);font-size:20px;color:var(--neon-yellow)">${s.name}</div>
+      <div class="hint">Уровень ${lvl}${maxed?' (макс.)':''}</div>
+      <div class="hint" style="margin-top:6px">HP: <b>${stats.hp}</b> · Урон: <b>+${stats.dmgBonus}</b>${!maxed?` → след. уровень: HP ${nextStats.hp}, урон +${nextStats.dmgBonus}`:''}</div>
+    </div>`;
+  const buttons = [];
+  if(!isEquipped) buttons.push({ t:"Экипировать", fn:()=>equipSkin(skinId) });
+  if(!maxed) buttons.push({ t:`Тренировать — ${cost} жетонов`, fn:()=>trainMercenary(skinId) });
+  buttons.push({ t:"Закрыть" });
+  dlg("Наёмник", body, buttons);
+}
+
+function trainMercenary(skinId){
+  if(!myKey) myKey = getKey();
+  startNet(()=>ws.send(J({t:"train_mercenary", key:myKey, skinId, initData:tgInitData()})));
+}
+
+function equipSkin(skinId){
+  if(!myKey) myKey = getKey();
+  startNet(()=>ws.send(J({t:"equip_skin", key:myKey, skinId, initData:tgInitData()})));
+}
+
+function render(){
+  if(!st) return;
+  if(st.phase==="lobby"){ show("wait"); $("roomcode").textContent = st.code; }
+  else if(st.phase==="battle" || st.phase==="over") renderBattle();
+}
+
+function renderBattle(){
+  show("battle");
+  $("battletitle").textContent = "Раунд " + st.round;
+  $("myname").innerHTML = `<span class="skin-badge">${st.you.skin ? mercIcon(st.you.skin.id) : mercIcon('rookie')}</span>` + esc(st.you.nick) + " (вы)";
+  $("oppname").innerHTML = st.opponent ? (`<span class="skin-badge">${st.opponent.skin ? mercIcon(st.opponent.skin.id) : mercIcon('rookie')}</span>` + esc(st.opponent.nick)) : "…";
+  const myMax = st.you.maxHp || 100, oppMax = (st.opponent && st.opponent.maxHp) || 100;
+  const myhp = Math.max(0, st.you.hp), ophp = st.opponent ? Math.max(0, st.opponent.hp) : 0;
+  $("myhp").textContent = myhp+"/"+myMax; $("opphp").textContent = ophp+"/"+oppMax;
+  $("myhpbar").style.width = Math.round(myhp/myMax*100)+"%"; $("myhpbar").classList.toggle("low", myhp<=myMax*0.3);
+  $("opphpbar").style.width = Math.round(ophp/oppMax*100)+"%"; $("opphpbar").classList.toggle("low", ophp<=oppMax*0.3);
+
+  moved = st.you.moved;
+  const tb = $("turnbanner");
+  if(st.phase==="battle"){
+    tb.innerHTML = moved
+      ? (st.opponent && st.opponent.moved ? "Оба выбрали — раскрываем…" : "Ждём соперника… <span class='cd' id='movecd'></span>")
+      : "Выберите оружие! <span class='cd' id='movecd'></span>";
+  }
+  renderWheel();
+  $("battlestatus");
+}
+
+function renderWheel(){
+  const wheel = $("wheel"); wheel.innerHTML="";
+  WEAPONS.forEach(w=>{
+    const rarity = (econ && econ.gear && econ.gear[w]) || 'common';
+    const btn = document.createElement("button");
+    btn.className = "wbtn rare-"+rarity;
+    btn.disabled = moved || st.phase!=="battle";
+    btn.innerHTML = `${pixelSVG(w)}<span class="nm">${LABELS[w]}</span><span class="rr">${RARITY_ICON[rarity]}</span>`;
+    btn.onclick = ()=>{ if(moved) return; ws.send(J({t:"move", weapon:w})); moved=true; renderWheel(); };
+    wheel.appendChild(btn);
+  });
+}
+
+/* ================= chat ================= */
+function addMsg(e){
+  const box=$("chat");
+  const d=document.createElement("div");
+  d.className="msg"; d.textContent=e.text;
+  box.appendChild(d); box.scrollTop=box.scrollHeight;
+}
+
+/* ================= result ================= */
+function showResult(m){
+  dlg("Бой окончен", esc(m.msg), [{t:"В меню", fn:()=>{ session=null; location.reload(); }}]);
+}
+
+/* ================= lootbox ================= */
+function openBox(){
+  if(!myKey) myKey = getKey();
+  startNet(()=>ws.send(J({t:"open_box", key:myKey, initData:tgInitData()})));
+}
+function showLootbox(m){
+  econ = m.econ; renderEcon(); renderGearGrid(); renderSkinGrid();
+  const iconHtml = m.kind === 'skin' ? mercIcon(m.skinId) : pixelSVG(m.weapon);
+  const body = `<div class="boxresult rare-${m.rarity}">
+    <div class="ic" style="width:56px;height:56px;margin:0 auto">${iconHtml}</div>
+    <div class="rn">${m.rarityLabel} — ${m.label}</div>
+    <div class="hint">${m.upgraded ? (m.kind==='skin' ? "Новый наёмник разблокирован!" : "Улучшение получено!") : "Уже было такое же или лучше — часть жетонов вернулась."}</div>
+  </div>`;
+  dlg("Лутбокс", body, [{t:"Ещё раз", fn:()=>{ if(econ.tokens>=BOX_COST) openBox(); }}, {t:"Закрыть"}]);
+}
+
+/* ================= countdown ================= */
+setInterval(()=>{
+  if(!st || st.phase!=="battle") return;
+  const t = Math.max(0, Math.round((st.deadline - Date.now())/1000));
+  const el=$("movecd"); if(el) el.textContent = t+" с";
+}, 500);
+
+/* ================= invite ================= */
+function copyInvite(){
+  const url=location.origin+location.pathname+"?room="+st.code;
+  const share=()=>{ if(tg && tg.openTelegramLink){ tg.openTelegramLink("https://t.me/share/url?url="+encodeURIComponent(url)+"&text="+encodeURIComponent("Го в Стритфайт! Код: "+st.code)); } };
+  if(navigator.clipboard){ navigator.clipboard.writeText(url).then(()=>dlg("Скопировано","Ссылка-приглашение в буфере обмена.")).catch(share); }
+  else share();
+}
+
+/* ================= init ================= */
+(function init(){
+  const giftEl = $("lootboxicon"); if(giftEl) giftEl.innerHTML = pixelSVG('gift');
+  const params=new URLSearchParams(location.search);
+  const roomParam=(params.get("room")||params.get("tgWebAppStartParam")||"").toUpperCase();
+  if(roomParam) $("joincode").value=roomParam;
+  myKey = getKey();
+  show("menu");
+  startNet(()=>ws.send(J({t:"identify", key:myKey, nick: myNick() || "Аноним", initData:tgInitData()})));
+})();
+</script>
+</body>
+</html>
