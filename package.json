@@ -1,0 +1,13 @@
+{
+  "name": "streetfight98-online",
+  "version": "1.0.0",
+  "description": "Стритфайт 98 — расширенный камень-ножницы-бумага PvP с HP и снаряжением",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.22.0",
+    "ws": "^8.18.0"
+  }
+}
