@@ -68,7 +68,31 @@ function getEconomy(key, nick) {
   }
   return e;
 }
-function saveEconomy(key) { db.persist(key, economy.get(key)); }
+// Защитная нормализация: страхует экономику от порчи данных (NaN, отрицательные
+// значения, неизвестная редкость, уровень наёмника вне диапазона, экипирован
+// неразблокированный наёмник и т.п.) — неважно, откуда взялась бы порча, баг в
+// коде, гонка состояний или ручное вмешательство в БД. Вызывается перед каждым
+// сохранением, так что в Postgres и клиенту всегда уходят валидные данные.
+function sanitizeEconomy(e) {
+  const toNonNegInt = v => Math.max(0, Math.floor(Number(v) || 0));
+  e.tokens = toNonNegInt(e.tokens);
+  e.rating = toNonNegInt(e.rating);
+  e.wins = toNonNegInt(e.wins);
+  e.losses = toNonNegInt(e.losses);
+  if (!e.gear || typeof e.gear !== 'object') e.gear = defaultGear();
+  WEAPONS.forEach(w => { if (!RARITY_LABEL[e.gear[w]]) e.gear[w] = 'common'; });
+  if (!Array.isArray(e.unlockedSkins) || !e.unlockedSkins.includes(DEFAULT_SKIN.id)) {
+    e.unlockedSkins = Array.isArray(e.unlockedSkins) ? [...new Set([DEFAULT_SKIN.id, ...e.unlockedSkins])] : [DEFAULT_SKIN.id];
+  }
+  if (!e.equippedSkin || !e.unlockedSkins.includes(e.equippedSkin)) e.equippedSkin = DEFAULT_SKIN.id;
+  if (!e.mercLevels || typeof e.mercLevels !== 'object') e.mercLevels = {};
+  for (const id of Object.keys(e.mercLevels)) {
+    const lvl = Math.floor(Number(e.mercLevels[id]) || 1);
+    e.mercLevels[id] = Math.min(MAX_MERC_LEVEL, Math.max(1, lvl));
+  }
+  return e;
+}
+function saveEconomy(key) { db.persist(key, sanitizeEconomy(economy.get(key))); }
 function econPublic(e) {
   return {
     nick: e.nick, tokens: e.tokens, rating: e.rating, wins: e.wins, losses: e.losses,
@@ -220,6 +244,7 @@ function endBattle(room, winner, loser) {
   const newForLoser = checkUnlocks(el);
   saveEconomy(winner.key);
   saveEconomy(loser.key);
+  db.recordMatch({ winnerKey: winner.key, winnerNick: winner.nick, loserKey: loser.key, loserNick: loser.nick, rounds: room.round });
   const msg = `${winner.nick} побеждает! ${loser.nick} повержен(а).`;
   broadcast(room, { t: 'result', winner: winner.nick, msg });
   room.players.forEach(p => send(p, { t: 'economy', econ: econPublic(getEconomy(p.key)) }));
@@ -348,6 +373,17 @@ function onIdentify(ws, msg) {
   ws.send(JSON.stringify({ t: 'economy', key, econ: econPublic(e) }));
 }
 
+async function onGetHistory(ws, msg) {
+  const key = resolveKey(msg);
+  try {
+    const history = await db.getHistory(key, 10);
+    ws.send(JSON.stringify({ t: 'history', history }));
+  } catch (err) {
+    logger.error({ err: err.message }, 'Ошибка получения истории матчей');
+    ws.send(JSON.stringify({ t: 'history', history: [] }));
+  }
+}
+
 function onDisconnect(ws) {
   const qi = queue.findIndex(q => q.ws === ws);
   if (qi >= 0) queue.splice(qi, 1);
@@ -417,6 +453,7 @@ wss.on('connection', (ws, req) => {
       case 'open_box':  onOpenBox(ws, msg); break;
       case 'equip_skin':onEquipSkin(ws, msg); break;
       case 'train_mercenary': onTrainMercenary(ws, msg); break;
+      case 'get_history': onGetHistory(ws, msg); break;
     }
   });
   ws.on('close', () => { wsRateLimiter.reset(ws._rlKey); onDisconnect(ws); });
