@@ -152,8 +152,17 @@ button.b.wide{display:block;width:100%}
   </div>
   <button class="b wide mt" onclick="show('shop')" id="lootboxbtn"><span id="lootboxicon" style="display:inline-flex;vertical-align:middle;margin-right:6px"></span>Лутбоксы</button>
   <button class="b blue wide mt" onclick="openRules()">Правила игры</button>
+  <button class="b wide mt" onclick="openHistory()">История матчей</button>
   <div class="hint" id="menuhint">Быстрый бой сведёт со случайным соперником. Или пришлите код другу.</div>
   <div class="econbar" id="econbar-menu"></div>
+</div>
+
+<!-- ============ HISTORY ============ -->
+<div class="card hidden" id="scr-history">
+  <h2>История матчей</h2>
+  <div class="hint" style="margin:0 0 10px">Последние 10 боёв.</div>
+  <div id="historyList"></div>
+  <button class="b wide mt" onclick="show('menu')">Назад</button>
 </div>
 
 <!-- ============ RULES ============ -->
@@ -268,7 +277,25 @@ function openRules(){
     box.appendChild(row);
   });
 }
-const RARITY_ICON = { common:'●', rare:'◆', epic:'★', legendary:'✦' };
+function openHistory(){
+  show('history');
+  $("historyList").innerHTML = '<div class="hint">Загрузка…</div>';
+  if(!myKey) myKey = getKey();
+  startNet(()=>ws.send(J({t:"get_history", key:myKey, initData:tgInitData()})));
+}
+function renderHistory(history){
+  const box = $("historyList");
+  if(!history || !history.length){ box.innerHTML = '<div class="hint">Пока нет сыгранных боёв.</div>'; return; }
+  box.innerHTML = '';
+  history.forEach(h=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed #20404a;font-size:16px';
+    const outcome = h.won ? '<b style="color:var(--neon-green)">Победа</b>' : '<b style="color:var(--danger)">Поражение</b>';
+    const when = new Date(h.at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    row.innerHTML = `<span>${outcome} vs ${esc(h.opponent)}</span><span style="color:var(--muted);font-size:14px">${h.rounds} р. · ${when}</span>`;
+    box.appendChild(row);
+  });
+}
 const BOX_COST = 20;
 const MAX_MERC_LEVEL = 5;
 const TRAIN_BASE_COST = 5;
@@ -372,6 +399,7 @@ function handle(m){
       closeDlg();
       dlg("Тренировка", `Наёмник прокачан до уровня <b>${m.newLevel}</b>! Потрачено ${m.cost} жетонов.`, [{t:"Отлично"}]);
       break;
+    case "history": renderHistory(m.history); break;
     case "err":
       dlg("Ошибка", esc(m.text));
       if(m.fatal){ session=null; show("menu"); }
@@ -380,7 +408,7 @@ function handle(m){
 }
 
 /* ================= screens ================= */
-const screens=["menu","shop","rules","wait","battle"];
+const screens=["menu","shop","rules","history","wait","battle"];
 function show(name){
   screens.forEach(s=>$("scr-"+s).classList.toggle("hidden", s!==name));
   if(name==="shop"){ myKey=getKey(); startNet(()=>ws.send(J({t:"identify",key:myKey,nick:myNick(),initData:tgInitData()}))); renderGearGrid(); }
