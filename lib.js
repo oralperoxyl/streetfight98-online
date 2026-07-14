@@ -23,6 +23,11 @@ const RARITY_WEIGHTS = { common: 60, rare: 25, epic: 12, legendary: 3 };
 const RARITY_BONUS = { common: 0, rare: 3, epic: 6, legendary: 10 };
 const RARITY_LABEL = { common: 'Обычное', rare: 'Редкое', epic: 'Эпическое', legendary: 'Легендарное' };
 const BASE_DAMAGE = 10;
+// Потолок суммарного бонуса урона (редкость оружия + уровень наёмника вместе).
+// Без потолка максимально прокачанный игрок (легендарное оружие +10, наёмник
+// 5 уровня +7) бил бы на 27 против базовых 10 — это 2.7x, слишком жёстко для
+// случайного матчмейкинга новичков со старичками. С потолком максимум — 18 (1.8x).
+const MAX_BONUS_DAMAGE = 8;
 const MAX_HP = 100;
 const BOX_COST = 20;
 const SKIN_BOX_CHANCE = 0.2; // шанс, что лутбокс выдаст скин вместо оружия
@@ -98,6 +103,14 @@ function damageFor(gear, weapon) {
   return BASE_DAMAGE + RARITY_BONUS[rarity];
 }
 
+// Итоговый урон удара с учётом и оружия, и наёмника, но с общим потолком на
+// сумму бонусов — иначе прокачка не должна давать неограниченное преимущество.
+function combinedDamage(gear, weapon, mercDmgBonus) {
+  const rarity = (gear && gear[weapon]) || 'common';
+  const rawBonus = RARITY_BONUS[rarity] + (mercDmgBonus || 0);
+  return BASE_DAMAGE + Math.min(MAX_BONUS_DAMAGE, rawBonus);
+}
+
 function rollWeighted(weights) {
   const total = Object.values(weights).reduce((s, w) => s + w, 0);
   let r = Math.random() * total;
@@ -142,8 +155,8 @@ function openLootbox(econ) {
 module.exports = {
   WEAPONS, LABELS, ICONS, BEATS, VERBS,
   RARITIES, RARITY_WEIGHTS, RARITY_BONUS, RARITY_LABEL,
-  BASE_DAMAGE, MAX_HP, BOX_COST,
+  BASE_DAMAGE, MAX_BONUS_DAMAGE, MAX_HP, BOX_COST,
   MAX_MERC_LEVEL, TRAIN_BASE_COST, mercTrainCost, mercStats,
   DEFAULT_SKIN, MILESTONE_SKINS, RATING_SKINS, LOOTBOX_SKINS, ALL_SKINS, SKIN_BY_ID,
-  resolveRound, rollRarity, defaultGear, rarityRank, openLootbox, damageFor, checkUnlocks,
+  resolveRound, rollRarity, defaultGear, rarityRank, openLootbox, damageFor, combinedDamage, checkUnlocks,
 };

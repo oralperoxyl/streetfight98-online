@@ -14,7 +14,7 @@ const { WebSocketServer } = require('ws');
 const {
   WEAPONS, LABELS, ICONS, VERBS, RARITY_LABEL, DEFAULT_SKIN, SKIN_BY_ID,
   BOX_COST, MAX_MERC_LEVEL, mercTrainCost, mercStats,
-  resolveRound, defaultGear, openLootbox, damageFor, checkUnlocks,
+  resolveRound, defaultGear, openLootbox, damageFor, combinedDamage, checkUnlocks,
 } = require('./lib');
 const db = require('./db');
 const { verifyInitData } = require('./tgAuth');
@@ -214,6 +214,7 @@ function resolveIfReady(room) {
   const outcome = resolveRound(wa, wb);
   const ea = getEconomy(pa.key), eb = getEconomy(pb.key);
   let text;
+  let resultPayload = { t: 'round_result', round: room.round, aId: pa.id, bId: pb.id, aWeapon: wa, bWeapon: wb, outcome, dmg: 0, loserId: null };
   if (outcome === 'draw') {
     text = `Раунд ${room.round}: оба выбрали ${LABELS[wa]} ${ICONS[wa]} — ничья, урона нет.`;
   } else {
@@ -222,11 +223,14 @@ function resolveIfReady(room) {
     const wWeapon = outcome === 'a' ? wa : wb;
     const lWeapon = outcome === 'a' ? wb : wa;
     const winEcon = outcome === 'a' ? ea : eb;
-    const dmg = damageFor(winEcon.gear, wWeapon) + currentStats(winEcon).dmgBonus;
+    const dmg = combinedDamage(winEcon.gear, wWeapon, currentStats(winEcon).dmgBonus);
     room.hp[loser.id] = Math.max(0, room.hp[loser.id] - dmg);
     const verb = VERBS[`${wWeapon}>${lWeapon}`] || 'побеждает';
     text = `Раунд ${room.round}: ${winner.nick} — ${LABELS[wWeapon]} ${ICONS[wWeapon]} ${verb} ${LABELS[lWeapon]} ${ICONS[lWeapon]} у ${loser.nick}. Урон: ${dmg}.`;
+    resultPayload.dmg = dmg;
+    resultPayload.loserId = loser.id;
   }
+  broadcast(room, resultPayload);
   log(room, text);
   const dead = room.players.find(p => room.hp[p.id] <= 0);
   if (dead) { endBattle(room, other(room, dead.id), dead); return; }

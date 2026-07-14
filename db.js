@@ -29,7 +29,20 @@ async function init() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  logger.info('База данных подключена, таблица players готова.');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS matches (
+      id BIGSERIAL PRIMARY KEY,
+      winner_key TEXT NOT NULL,
+      winner_nick TEXT NOT NULL,
+      loser_key TEXT NOT NULL,
+      loser_nick TEXT NOT NULL,
+      rounds INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS matches_winner_idx ON matches (winner_key, created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS matches_loser_idx ON matches (loser_key, created_at DESC);`);
+  logger.info('База данных подключена, таблицы players и matches готовы.');
 }
 
 // Загружает всех игроков в Map (key -> economy object) при старте сервера.
@@ -54,4 +67,32 @@ function persist(key, economyObj) {
 
 async function close() { if (pool) await pool.end(); }
 
-module.exports = { init, loadAll, persist, close, isEnabled };
+// Записывает результат боя. Fire-and-forget, как persist() — ошибка записи
+// истории не должна ронять сам матч или блокировать игрока.
+function recordMatch({ winnerKey, winnerNick, loserKey, loserNick, rounds }) {
+  if (!pool) return;
+  pool.query(
+    'INSERT INTO matches (winner_key, winner_nick, loser_key, loser_nick, rounds) VALUES ($1,$2,$3,$4,$5)',
+    [winnerKey, winnerNick, loserKey, loserNick, rounds]
+  ).catch(err => logger.error({ err: err.message }, 'Ошибка записи истории матча'));
+}
+
+// Последние limit матчей игрока (в любой роли — победитель или проигравший),
+// в удобном для клиента виде: кто соперник, выиграл ли этот игрок, когда.
+async function getHistory(key, limit = 10) {
+  if (!pool) return [];
+  const res = await pool.query(
+    `SELECT winner_key, winner_nick, loser_key, loser_nick, rounds, created_at
+     FROM matches WHERE winner_key = $1 OR loser_key = $1
+     ORDER BY created_at DESC LIMIT $2`,
+    [key, limit]
+  );
+  return res.rows.map(row => ({
+    won: row.winner_key === key,
+    opponent: row.winner_key === key ? row.loser_nick : row.winner_nick,
+    rounds: row.rounds,
+    at: row.created_at,
+  }));
+}
+
+module.exports = { init, loadAll, persist, close, isEnabled, recordMatch, getHistory };
