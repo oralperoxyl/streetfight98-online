@@ -20,7 +20,17 @@ const db = require('./db');
 const { verifyInitData } = require('./tgAuth');
 const logger = require('./logger');
 const { createRateLimiter } = require('./rateLimit');
+const bot = require('./bot');
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
+
+// Через сколько секунд ожидания в очереди подкидывать бота-соперника, чтобы
+// игрок не висел в пустом зале. С небольшим случайным разбросом, чтобы время
+// ожидания не было всегда одинаковым (иначе бот легко вычисляется по таймингу).
+// BOT_FILL_ENABLED=off полностью отключает ботов (например, когда наберётся
+// достаточно живой аудитории).
+const BOT_FILL_ENABLED = process.env.BOT_FILL_ENABLED !== 'off';
+const BOT_FILL_MIN_MS = (+process.env.BOT_FILL_MIN_SEC || 12) * 1000;
+const BOT_FILL_MAX_MS = (+process.env.BOT_FILL_MAX_SEC || 20) * 1000;
 
 const PORT = process.env.PORT || 3000;
 const T_MOVE = (+process.env.T_MOVE || 20) * 1000;
@@ -169,6 +179,16 @@ function addPlayer(room, ws, nick, key) {
   return p;
 }
 
+// Добавляет бота как обычного игрока, но без ws и с флагом isBot.
+// send() безопасно пропускает игрока без живого ws, так что боту просто ничего
+// не отправляется, а протокол для живого соперника не отличается от матча PvP.
+function addPlayerBot(room, nick, key) {
+  const p = { id: uid(), token: uid(), nick, key, ws: null, online: true, isBot: true, moveHistory: [] };
+  room.players.push(p);
+  room.hasBot = true;
+  return p;
+}
+
 function startBattle(room) {
   room.phase = 'battle';
   room.round = 0;
@@ -189,6 +209,25 @@ function nextRound(room) {
   room.deadline = now() + T_MOVE;
   room.timer = setTimeout(() => forceRandomMoves(room), T_MOVE);
   syncAll(room);
+  scheduleBotMove(room);
+}
+
+// Планирует ход бота (если в комнате есть бот) с человеческой задержкой.
+// Бот выбирает оружие по своей эвристике на основе истории ходов живого
+// соперника — он НЕ подсматривает текущий ход игрока.
+function scheduleBotMove(room) {
+  if (room.phase !== 'battle') return;
+  const botP = room.players.find(p => p.isBot);
+  if (!botP) return;
+  const human = other(room, botP.id);
+  const delay = bot.moveDelayMs();
+  setTimeout(() => {
+    if (room.phase !== 'battle' || room.moves[botP.id]) return; // раунд уже мог закрыться
+    const weapon = bot.chooseWeapon(human ? (room.humanHistory || []) : []);
+    room.moves[botP.id] = weapon;
+    syncAll(room); // игрок видит "соперник сделал выбор" — как при живом сопернике
+    resolveIfReady(room);
+  }, Math.min(delay, T_MOVE - 500)); // гарантируем, что бот успевает до таймаута раунда
 }
 
 function forceRandomMoves(room) {
@@ -201,6 +240,13 @@ function onMove(room, p, msg) {
   if (room.phase !== 'battle' || room.moves[p.id]) return;
   if (!WEAPONS.includes(msg.weapon)) return;
   room.moves[p.id] = msg.weapon;
+  // Копим историю ходов живого игрока — по ней бот строит стратегию (без
+  // подсматривания текущего хода: запись идёт для будущих раундов).
+  if (room.hasBot && !p.isBot) {
+    if (!room.humanHistory) room.humanHistory = [];
+    room.humanHistory.push(msg.weapon);
+    if (room.humanHistory.length > 20) room.humanHistory.shift();
+  }
   syncAll(room); // соперник видит "выбор сделан", но не сам выбор
   resolveIfReady(room);
 }
@@ -246,9 +292,15 @@ function endBattle(room, winner, loser) {
   el.tokens += LOSS_TOKENS; el.losses += 1; el.rating = Math.max(0, el.rating + LOSS_RATING);
   const newForWinner = checkUnlocks(ew);
   const newForLoser = checkUnlocks(el);
-  saveEconomy(winner.key);
-  saveEconomy(loser.key);
-  db.recordMatch({ winnerKey: winner.key, winnerNick: winner.nick, loserKey: loser.key, loserNick: loser.nick, rounds: room.round });
+  // Живым игрокам сохраняем прогресс как обычно; профиль бота (ключ 'bot:...')
+  // не персистим — иначе в БД копились бы фантомные аккаунты.
+  if (!winner.isBot) saveEconomy(winner.key);
+  if (!loser.isBot) saveEconomy(loser.key);
+  // Историю матча пишем только если оба — живые. Матч против бота в историю не
+  // попадает: иначе там всплыл бы bot-ключ и живой игрок мог бы вычислить бота.
+  if (!winner.isBot && !loser.isBot) {
+    db.recordMatch({ winnerKey: winner.key, winnerNick: winner.nick, loserKey: loser.key, loserNick: loser.nick, rounds: room.round });
+  }
   const msg = `${winner.nick} побеждает! ${loser.nick} повержен(а).`;
   broadcast(room, { t: 'result', winner: winner.nick, msg });
   room.players.forEach(p => send(p, { t: 'economy', econ: econPublic(getEconomy(p.key)) }));
@@ -256,6 +308,13 @@ function endBattle(room, winner, loser) {
   if (newForWinner.length) log(room, `🎉 ${winner.nick} разблокировал(а) скин: ${newForWinner.map(s => s.name).join(', ')}!`);
   if (newForLoser.length) log(room, `🎉 ${loser.nick} разблокировал(а) скин: ${newForLoser.map(s => s.name).join(', ')}!`);
   syncAll(room);
+  // Убираем временный профиль бота из памяти — он больше не нужен.
+  cleanupBotProfiles(room);
+}
+
+// Удаляет временные профили ботов этой комнаты из карты экономики.
+function cleanupBotProfiles(room) {
+  room.players.forEach(p => { if (p.isBot && economy.has(p.key)) economy.delete(p.key); });
 }
 
 /* ---------------- membership ---------------- */
@@ -291,6 +350,7 @@ function onQuick(ws, msg) {
   getEconomy(key, nick);
   if (queue.length > 0) {
     const waiting = queue.shift();
+    if (waiting.botTimer) clearTimeout(waiting.botTimer);
     if (waiting.ws.readyState !== 1) { onQuick(ws, msg); return; }
     const room = makeRoom();
     addPlayer(room, waiting.ws, waiting.nick, waiting.key);
@@ -299,9 +359,40 @@ function onQuick(ws, msg) {
     log(room, `Быстрый бой: ${room.players[0].nick} против ${room.players[1].nick}!`);
     startBattle(room);
   } else {
-    queue.push({ ws, nick, key });
+    const entry = { ws, nick, key, botTimer: null };
+    queue.push(entry);
     send({ ws }, { t: 'queued' });
+    // Если за случайное время ожидания живой соперник не пришёл — подкидываем бота.
+    if (BOT_FILL_ENABLED) {
+      const delay = BOT_FILL_MIN_MS + Math.random() * (BOT_FILL_MAX_MS - BOT_FILL_MIN_MS);
+      entry.botTimer = setTimeout(() => startBotMatch(entry), delay);
+    }
   }
+}
+
+// Создаёт матч живого игрока против бота. С точки зрения игрока и протокола это
+// абсолютно обычная комната на двоих: бот — полноценный игрок в room.players,
+// просто без ws (send() его молча пропускает) и с флагом isBot, а его ходы
+// генерирует сервер с человеческими задержками.
+function startBotMatch(entry) {
+  const idx = queue.indexOf(entry);
+  if (idx === -1) return;           // игрок уже нашёл живого соперника или ушёл
+  if (entry.ws.readyState !== 1) { queue.splice(idx, 1); return; } // игрок отключился
+  queue.splice(idx, 1);
+
+  const room = makeRoom();
+  const human = addPlayer(room, entry.ws, entry.nick, entry.key);
+
+  // профиль бота под уровень игрока
+  const botKey = 'bot:' + uid();
+  const botEcon = bot.makeBotEconomy(getEconomy(entry.key), defaultGear, DEFAULT_SKIN.id);
+  economy.set(botKey, botEcon);     // временный профиль в памяти (в БД не сохраняется — ключ botKey, saveEconomy для бота не вызывается)
+  const botPlayer = addPlayerBot(room, botEcon.nick, botKey);
+
+  send(human, { t: 'joined', code: room.code, token: human.token, id: human.id, econ: econPublic(getEconomy(human.key)) });
+  log(room, `Быстрый бой: ${room.players[0].nick} против ${room.players[1].nick}!`);
+  logger.info({ code: room.code, human: entry.nick }, 'Матч с ботом-соперником создан');
+  startBattle(room);
 }
 
 function onRejoin(ws, msg) {
@@ -390,14 +481,22 @@ async function onGetHistory(ws, msg) {
 
 function onDisconnect(ws) {
   const qi = queue.findIndex(q => q.ws === ws);
-  if (qi >= 0) queue.splice(qi, 1);
+  if (qi >= 0) {
+    if (queue[qi].botTimer) clearTimeout(queue[qi].botTimer); // снять отложенный запуск бота
+    queue.splice(qi, 1);
+  }
   const room = ws._room;
   if (!room) return;
   const p = room.players.find(q => q.id === ws._pid);
   if (!p || p.ws !== ws) return;
   p.online = false;
   log(room, `${p.nick} отключился.`);
-  if (!room.players.some(q => q.online)) {
+  // Комната считается пустой, если не осталось живых людей онлайн. Бот (isBot)
+  // формально online:true, но сам по себе комнату держать не должен — иначе
+  // матч с ботом, из которого вышел игрок, никогда не убрался бы.
+  const anyHumanOnline = room.players.some(q => q.online && !q.isBot);
+  if (!anyHumanOnline) {
+    cleanupBotProfiles(room);
     room.killTimer = setTimeout(() => { clearTimer(room); rooms.delete(room.code); }, ROOM_TTL);
   }
   syncAll(room);
