@@ -95,4 +95,26 @@ async function getHistory(key, limit = 10) {
   }));
 }
 
-module.exports = { init, loadAll, persist, close, isEnabled, recordMatch, getHistory };
+// Топ игроков по рейтингу. Боты сюда попасть не могут: их профили никогда не
+// сохраняются в players (см. endBattle), так что список честный сам по себе.
+// Исключаем аккаунты без единого матча, чтобы топ не забивался пустышками.
+async function getLeaderboard(limit = 20) {
+  if (!pool) return [];
+  const res = await pool.query(
+    `SELECT key, data->>'nick' AS nick,
+            (data->>'rating')::int  AS rating,
+            (data->>'wins')::int    AS wins,
+            (data->>'losses')::int  AS losses
+     FROM players
+     WHERE COALESCE((data->>'wins')::int,0) + COALESCE((data->>'losses')::int,0) > 0
+     ORDER BY rating DESC NULLS LAST
+     LIMIT $1`,
+    [limit]
+  );
+  return res.rows.map((r, i) => ({
+    place: i + 1, key: r.key, nick: r.nick,
+    rating: r.rating, wins: r.wins, losses: r.losses,
+  }));
+}
+
+module.exports = { init, loadAll, persist, close, isEnabled, recordMatch, getHistory, getLeaderboard };

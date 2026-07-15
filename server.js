@@ -14,7 +14,7 @@ const { WebSocketServer } = require('ws');
 const {
   WEAPONS, LABELS, ICONS, VERBS, RARITY_LABEL, DEFAULT_SKIN, SKIN_BY_ID,
   BOX_COST, MAX_MERC_LEVEL, mercTrainCost, mercStats,
-  resolveRound, defaultGear, openLootbox, damageFor, combinedDamage, checkUnlocks,
+  resolveRound, defaultGear, openLootbox, damageFor, combinedDamage, checkUnlocks, eloApply,
 } = require('./lib');
 const db = require('./db');
 const { verifyInitData } = require('./tgAuth');
@@ -38,7 +38,7 @@ const REVEAL_PAUSE = +process.env.T_REVEAL_PAUSE || 1800;
 const ROOM_TTL = 10 * 60 * 1000;
 const START_TOKENS = 40;
 const WIN_TOKENS = 8, LOSS_TOKENS = 3, DRAW_TOKENS = 1;
-const WIN_RATING = 15, LOSS_RATING = -10;
+// Рейтинг считается по Эло (lib.js) — плоских +15/-10 больше нет.
 
 // Rate limit на входящие WS-сообщения: 30 сообщений за 10 секунд с одного
 // соединения — с запасом хватает на реальную игру (ходы, лутбоксы, чат),
@@ -69,6 +69,7 @@ function getEconomy(key, nick) {
     e = {
       nick: nick || 'Аноним', tokens: START_TOKENS, rating: 1000, wins: 0, losses: 0,
       gear: defaultGear(), unlockedSkins: [DEFAULT_SKIN.id], equippedSkin: DEFAULT_SKIN.id, mercLevels: {},
+      streak: 0, bestStreak: 0, weaponUses: {}, // статистика профиля
     };
     economy.set(key, e);
     saveEconomy(key);
@@ -100,6 +101,14 @@ function sanitizeEconomy(e) {
     const lvl = Math.floor(Number(e.mercLevels[id]) || 1);
     e.mercLevels[id] = Math.min(MAX_MERC_LEVEL, Math.max(1, lvl));
   }
+  // Статистика профиля
+  e.streak = toNonNegInt(e.streak);
+  e.bestStreak = Math.max(toNonNegInt(e.bestStreak), e.streak);
+  if (!e.weaponUses || typeof e.weaponUses !== 'object') e.weaponUses = {};
+  for (const w of Object.keys(e.weaponUses)) {
+    if (!WEAPONS.includes(w)) { delete e.weaponUses[w]; continue; }
+    e.weaponUses[w] = toNonNegInt(e.weaponUses[w]);
+  }
   return e;
 }
 function saveEconomy(key) { db.persist(key, sanitizeEconomy(economy.get(key))); }
@@ -107,6 +116,7 @@ function econPublic(e) {
   return {
     nick: e.nick, tokens: e.tokens, rating: e.rating, wins: e.wins, losses: e.losses,
     gear: e.gear, unlockedSkins: e.unlockedSkins, equippedSkin: e.equippedSkin, mercLevels: e.mercLevels || {},
+    streak: e.streak || 0, bestStreak: e.bestStreak || 0, weaponUses: e.weaponUses || {},
   };
 }
 function skinOf(e) { return SKIN_BY_ID[e.equippedSkin] || DEFAULT_SKIN; }
@@ -253,6 +263,12 @@ function onMove(room, p, msg) {
   if (room.phase !== 'battle' || room.moves[p.id]) return;
   if (!WEAPONS.includes(msg.weapon)) return;
   room.moves[p.id] = msg.weapon;
+  // Статистика «любимого оружия» — только для живых игроков.
+  if (!p.isBot) {
+    const e = getEconomy(p.key);
+    if (!e.weaponUses) e.weaponUses = {};
+    e.weaponUses[msg.weapon] = (e.weaponUses[msg.weapon] || 0) + 1;
+  }
   // Копим историю ходов живого игрока — по ней бот строит стратегию (без
   // подсматривания текущего хода: запись идёт для будущих раундов).
   if (room.hasBot && !p.isBot) {
@@ -301,19 +317,31 @@ function endBattle(room, winner, loser) {
   clearTimer(room);
   room.phase = 'over';
   const ew = getEconomy(winner.key), el = getEconomy(loser.key);
-  ew.tokens += WIN_TOKENS; ew.wins += 1; ew.rating += WIN_RATING;
-  el.tokens += LOSS_TOKENS; el.losses += 1; el.rating = Math.max(0, el.rating + LOSS_RATING);
+
+  // Рейтинг Эло: считаем ОБА новых значения от исходных, иначе второй игрок
+  // считался бы уже от изменённого рейтинга первого.
+  const rw = ew.rating, rl = el.rating;
+  ew.rating = eloApply(rw, rl, 1);
+  el.rating = eloApply(rl, rw, 0);
+
+  ew.tokens += WIN_TOKENS; ew.wins += 1;
+  el.tokens += LOSS_TOKENS; el.losses += 1;
+
+  // Серия побед
+  ew.streak = (ew.streak || 0) + 1;
+  ew.bestStreak = Math.max(ew.bestStreak || 0, ew.streak);
+  el.streak = 0;
+
   const newForWinner = checkUnlocks(ew);
   const newForLoser = checkUnlocks(el);
-  // Живым игрокам сохраняем прогресс как обычно; профиль бота (ключ 'bot:...')
-  // не персистим — иначе в БД копились бы фантомные аккаунты.
+  // Живым игрокам сохраняем прогресс; профиль бота (ключ 'bot:...') не персистим —
+  // иначе в БД копились бы фантомные аккаунты.
   if (!winner.isBot) saveEconomy(winner.key);
   if (!loser.isBot) saveEconomy(loser.key);
-  // Историю матча пишем только если оба — живые. Матч против бота в историю не
-  // попадает: иначе там всплыл бы bot-ключ и живой игрок мог бы вычислить бота.
-  if (!winner.isBot && !loser.isBot) {
-    db.recordMatch({ winnerKey: winner.key, winnerNick: winner.nick, loserKey: loser.key, loserNick: loser.nick, rounds: room.round });
-  }
+  // Матч с ботом ТОЖЕ пишем в историю. Это безопасно: getHistory отдаёт клиенту
+  // только ник соперника и никогда ключ. А если матчи с ботом пропускать,
+  // у игрока «Побед: 10» при двух записях в истории — и бот мгновенно спалится.
+  db.recordMatch({ winnerKey: winner.key, winnerNick: winner.nick, loserKey: loser.key, loserNick: loser.nick, rounds: room.round });
   const msg = `${winner.nick} побеждает! ${loser.nick} повержен(а).`;
   broadcast(room, { t: 'result', winner: winner.nick, msg });
   room.players.forEach(p => send(p, { t: 'economy', econ: econPublic(getEconomy(p.key)) }));
@@ -481,6 +509,20 @@ function onIdentify(ws, msg) {
   ws.send(JSON.stringify({ t: 'economy', key, econ: econPublic(e) }));
 }
 
+async function onGetLeaderboard(ws, msg) {
+  const key = resolveKey(msg);
+  try {
+    const top = await db.getLeaderboard(20);
+    // Отдаём клиенту только ники и цифры — ключи наружу не уходят,
+    // помечаем лишь строку самого игрока, чтобы подсветить её в списке.
+    const rows = top.map(r => ({ place: r.place, nick: r.nick, rating: r.rating, wins: r.wins, losses: r.losses, me: r.key === key }));
+    ws.send(JSON.stringify({ t: 'leaderboard', rows }));
+  } catch (err) {
+    logger.error({ err: err.message }, 'Ошибка получения таблицы лидеров');
+    ws.send(JSON.stringify({ t: 'leaderboard', rows: [] }));
+  }
+}
+
 async function onGetHistory(ws, msg) {
   const key = resolveKey(msg);
   try {
@@ -570,6 +612,7 @@ wss.on('connection', (ws, req) => {
       case 'equip_skin':onEquipSkin(ws, msg); break;
       case 'train_mercenary': onTrainMercenary(ws, msg); break;
       case 'get_history': onGetHistory(ws, msg); break;
+      case 'get_leaderboard': onGetLeaderboard(ws, msg); break;
     }
   });
   ws.on('close', () => { wsRateLimiter.reset(ws._rlKey); onDisconnect(ws); });

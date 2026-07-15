@@ -152,10 +152,27 @@ function openLootbox(econ) {
   return { kind: 'weapon', weapon, rarity, upgraded, current: econ.gear[weapon] };
 }
 
+// Рейтинг Эло. Плоские +15/-10 не отражают силу соперника: победа над топом
+// и над новичком стоили одинаково. Здесь прибавка зависит от разницы рейтингов —
+// обыграть сильного выгодно, проиграть слабому больно.
+// K=24 — компромисс: рейтинг подвижен, но не скачет от одного матча.
+const ELO_K = 24;
+const ELO_FLOOR = 100; // ниже не опускаемся, чтобы не было «мёртвых» аккаунтов
+
+function eloExpected(ratingA, ratingB) {
+  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+}
+// score: 1 — победа, 0 — поражение. Возвращает НОВЫЙ рейтинг игрока A.
+function eloApply(ratingA, ratingB, score, k = ELO_K) {
+  const delta = Math.round(k * (score - eloExpected(ratingA, ratingB)));
+  return Math.max(ELO_FLOOR, ratingA + delta);
+}
+
 module.exports = {
   WEAPONS, LABELS, ICONS, BEATS, VERBS,
   RARITIES, RARITY_WEIGHTS, RARITY_BONUS, RARITY_LABEL,
   BASE_DAMAGE, MAX_BONUS_DAMAGE, MAX_HP, BOX_COST,
+  ELO_K, ELO_FLOOR, eloExpected, eloApply,
   MAX_MERC_LEVEL, TRAIN_BASE_COST, mercTrainCost, mercStats,
   DEFAULT_SKIN, MILESTONE_SKINS, RATING_SKINS, LOOTBOX_SKINS, ALL_SKINS, SKIN_BY_ID,
   resolveRound, rollRarity, defaultGear, rarityRank, openLootbox, damageFor, combinedDamage, checkUnlocks,
