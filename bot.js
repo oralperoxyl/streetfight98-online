@@ -28,15 +28,39 @@ function pickNick() {
   return choice;
 }
 
-// Задержка «раздумья» перед ходом — логнормально-подобная: обычно 1.5–4.5 с,
-// изредка дольше, как будто человек отвлёкся. Никогда не мгновенно.
-// Границы настраиваются через env (для тестов можно сделать быстрыми).
+// Задержка «раздумья» перед ходом. Живой человек не выбирает равномерно
+// случайное время: чаще всего он отвечает за пару секунд, иногда бьёт сразу
+// (уже решил, пока шёл прошлый раунд), изредка залипает почти до таймаута.
+// Поэтому распределение с «длинным хвостом», а не ровный рандом.
+// Границы настраиваются через env (в тестах можно сделать быстрыми).
 const DELAY_MIN = +process.env.BOT_DELAY_MIN_MS || 1500;
 const DELAY_SPREAD = +process.env.BOT_DELAY_SPREAD_MS || 3000;
-function moveDelayMs() {
-  const base = DELAY_MIN + Math.random() * DELAY_SPREAD;
-  const occasionalPause = Math.random() < 0.15 ? Math.random() * 4000 : 0;
-  return Math.round(base + occasionalPause);
+
+// ctx (необязательно): { hpRatio, oppHpRatio, round } — по нему бот «нервничает»
+// в напряжённые моменты и думает подольше, как человек.
+function moveDelayMs(ctx) {
+  const r = Math.random();
+  let ms;
+  if (r < 0.18) {
+    // мгновенная реакция — уже решил заранее
+    ms = DELAY_MIN * 0.4 + Math.random() * DELAY_MIN * 0.6;
+  } else if (r < 0.83) {
+    // обычный ход
+    ms = DELAY_MIN + Math.random() * DELAY_SPREAD;
+  } else if (r < 0.96) {
+    // задумался
+    ms = DELAY_MIN + DELAY_SPREAD + Math.random() * DELAY_SPREAD * 1.6;
+  } else {
+    // отвлёкся: долгая пауза, но всё равно успевает походить сам
+    ms = DELAY_MIN + DELAY_SPREAD * 2.5 + Math.random() * DELAY_SPREAD * 2.5;
+  }
+  // Напряжение: на низком HP (своём или чужом) человек думает дольше —
+  // цена ошибки выше. Максимум +60% к времени.
+  if (ctx && typeof ctx.hpRatio === 'number') {
+    const tension = Math.max(0, 1 - Math.min(ctx.hpRatio, ctx.oppHpRatio ?? 1));
+    ms *= 1 + tension * 0.6;
+  }
+  return Math.round(ms);
 }
 
 // Выбор оружия. Эвристика с элементом случайности:

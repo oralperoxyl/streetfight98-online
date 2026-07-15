@@ -223,7 +223,15 @@ function scheduleBotMove(room) {
   if (!botP) return;
   const human = other(room, botP.id);
   const roundAtSchedule = room.round;
-  const delay = Math.max(300, Math.min(bot.moveDelayMs(), T_MOVE - 1000));
+  // Контекст для «человечности» тайминга: на низком HP думаем дольше.
+  const ctx = {
+    hpRatio: (room.hp[botP.id] || 0) / (room.maxHp[botP.id] || 100),
+    oppHpRatio: human ? (room.hp[human.id] || 0) / (room.maxHp[human.id] || 100) : 1,
+    round: room.round,
+  };
+  // Верхняя граница — чтобы бот всегда успевал походить сам, а не по таймауту:
+  // иначе выглядело бы, будто соперник постоянно «отвалился».
+  const delay = Math.max(300, Math.min(bot.moveDelayMs(ctx), T_MOVE - 1500));
   room.botTimer = setTimeout(() => {
     room.botTimer = null;
     // Отменяем ход, если раунд уже сменился, бой кончился или бот уже походил.
