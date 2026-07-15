@@ -5,33 +5,139 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Стритфайт 98</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <style>
+/* Шрифты лежат локально в public/fonts (лицензия OFL, свободная в т.ч. для
+   коммерции). Так они грузятся с нашего же домена: быстрее, не зависят от
+   доступности Google Fonts и работают одинаково у всех.
+   ВАЖНО: подключены именно кириллические сабсеты. Прежний VT323 кириллицу
+   не поддерживает вовсе — из-за этого весь русский текст незаметно падал в
+   системный моноширинный шрифт вместо пиксельного. */
+@font-face{
+  font-family:'Press Start 2P'; font-style:normal; font-weight:400; font-display:swap;
+  src:url('fonts/press-start-2p-cyrillic-400-normal.woff2') format('woff2');
+  unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face{
+  font-family:'Press Start 2P'; font-style:normal; font-weight:400; font-display:swap;
+  src:url('fonts/press-start-2p-latin-400-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face{
+  font-family:'Handjet'; font-style:normal; font-weight:400; font-display:swap;
+  src:url('fonts/handjet-cyrillic-400-normal.woff2') format('woff2');
+  unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face{
+  font-family:'Handjet'; font-style:normal; font-weight:400; font-display:swap;
+  src:url('fonts/handjet-latin-400-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face{
+  font-family:'Handjet'; font-style:normal; font-weight:700; font-display:swap;
+  src:url('fonts/handjet-cyrillic-700-normal.woff2') format('woff2');
+  unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face{
+  font-family:'Handjet'; font-style:normal; font-weight:700; font-display:swap;
+  src:url('fonts/handjet-latin-700-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+/* Палитра «Бегущего по лезвию», сбалансированная: один доминирующий холодный
+   цвет (циан), тёплый янтарь для акцентов и маджента точечно. Раньше четыре
+   чистых неона конкурировали за внимание — теперь у них разный «вес». */
 :root{
-  --bg:#050810; --card:#0c141f; --card2:#101a28;
-  --neon-pink:#ff2e6b; --neon-green:#00ffc2; --neon-yellow:#ffb000; --neon-blue:#00d9ff;
-  --text:#dff4f7; --muted:#6f8494; --danger:#ff3b3b;
-  --font-head:'Press Start 2P',monospace; --font-body:'VT323',monospace;
+  --bg:#060a12; --card:#0c1420; --card2:#111b28;
+  --neon-pink:#e8437a;      /* маджента — только акценты/опасность */
+  --neon-green:#2dd4a7;     /* приглушённый тил вместо кислотного #00ffc2 */
+  --neon-yellow:#f2a541;    /* янтарь Blade Runner вместо чистого жёлтого */
+  --neon-blue:#3ec8e8;      /* доминирующий циан, мягче #00d9ff */
+  --text:#d5e6ee; --muted:#67808f; --danger:#e5484d;
+  --line:#1d3340;           /* спокойные рамки вместо фиолетово-серых */
+  --font-head:'Press Start 2P',monospace;
+  --font-body:'Handjet','Press Start 2P',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;image-rendering:pixelated}
 html,body{height:100%}
 body{
-  font-family:var(--font-body);font-size:20px;background:var(--bg);color:var(--text);
+  font-family:var(--font-body);font-size:22px;background:var(--bg);color:var(--text);
   min-height:100%;display:flex;flex-direction:column;align-items:center;
   padding:14px 10px 30px;user-select:none;position:relative;
-  background-image:
-    repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,.35) 1px, transparent 1px, transparent 4px),
-    radial-gradient(ellipse at 50% 0%, #0d3038 0%, #050810 70%);
+  /* Авторы Handjet предупреждают об артефактах на малых размерах в Safari/WebKit
+     (а Telegram на iOS — это WebKit); antialiased их убирает. */
+  -webkit-font-smoothing:antialiased;
 }
+/* Процедурный пиксельный город — рисуется заново при каждом заходе */
+#bgcanvas{
+  position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;
+  image-rendering:pixelated;z-index:-2;pointer-events:none;
+}
+#bgcanvas+.bgveil{
+  position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg, rgba(6,10,18,.35) 0%, rgba(6,10,18,.72) 55%, rgba(6,10,18,.9) 100%);
+}
+/* CRT-сканлайны поверх всего */
 body::after{
   content:"";position:fixed;inset:0;pointer-events:none;z-index:999;
-  background:repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px, transparent 2px, transparent 3px);
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 2px, transparent 3px);
 }
+/* Помеха: полоса развёртки, пробегающая по экрану. Класс вешает JS изредка,
+   чтобы глитч был случайным событием, а не постоянным раздражителем. */
+#glitchbar{
+  position:fixed;left:0;right:0;height:14px;top:-20px;z-index:998;pointer-events:none;opacity:0;
+  background:linear-gradient(90deg, transparent, rgba(62,200,232,.5), rgba(232,67,122,.45), transparent);
+  mix-blend-mode:screen;
+}
+body.glitching #glitchbar{ animation:glitchSweep .5s steps(8) 1; }
+@keyframes glitchSweep{
+  0%{opacity:0;top:-10%}
+  10%{opacity:1}
+  90%{opacity:.9}
+  100%{opacity:0;top:110%}
+}
+body.glitching .card{ animation:cardJitter .22s steps(2) 2; }
+@keyframes cardJitter{
+  0%,100%{transform:translate(0,0)}
+  25%{transform:translate(-2px,1px)}
+  50%{transform:translate(2px,-1px)}
+  75%{transform:translate(-1px,0)}
+}
+/* RGB-сплит на заголовке — «битый сигнал» */
+.glitch{position:relative;display:inline-block}
+.glitch::before,.glitch::after{
+  content:attr(data-text);position:absolute;left:0;top:0;width:100%;
+  pointer-events:none;opacity:.85;
+}
+.glitch::before{color:var(--neon-blue);animation:glitchShiftA 5.5s infinite steps(1)}
+.glitch::after{color:var(--neon-pink);animation:glitchShiftB 5.5s infinite steps(1)}
+@keyframes glitchShiftA{
+  0%,88%,100%{transform:translate(0,0);opacity:0}
+  90%{transform:translate(-2px,-1px);opacity:.9}
+  93%{transform:translate(2px,1px);opacity:.6}
+  96%{transform:translate(-1px,1px);opacity:.35}
+}
+@keyframes glitchShiftB{
+  0%,88%,100%{transform:translate(0,0);opacity:0}
+  91%{transform:translate(2px,1px);opacity:.9}
+  94%{transform:translate(-2px,-1px);opacity:.55}
+  97%{transform:translate(1px,-1px);opacity:.3}
+}
+@media (prefers-reduced-motion:reduce){
+  body.glitching #glitchbar,body.glitching .card,.glitch::before,.glitch::after{animation:none}
+  .glitch::before,.glitch::after{opacity:0}
+}
+/* Шпаргалка «кто кого бьёт» — всегда на виду в бою */
+.cheat{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:2px 10px;margin-top:8px;
+  padding:6px 8px;background:rgba(6,10,18,.6);border:2px solid var(--line);
+}
+.cheat-row{display:flex;align-items:center;gap:3px}
+.cheat-ic{width:16px;height:16px;display:inline-flex;flex:0 0 16px}
+.cheat-ic svg,.cheat-ic img{width:100%;height:100%}
+.cheat-arrow{font-family:var(--font-head);font-size:8px;color:var(--muted);margin:0 2px}
 .card{
   width:100%;max-width:420px;background:var(--card);border:3px solid #000;border-radius:0;
   padding:16px;margin-bottom:14px;position:relative;
-  box-shadow:5px 5px 0 #000, 0 0 0 1px #20404a inset;
+  box-shadow:5px 5px 0 #000, 0 0 0 1px var(--line) inset;
 }
 .card::before{content:"";position:absolute;top:-3px;left:-3px;right:-3px;height:5px;
   background:repeating-linear-gradient(90deg,var(--neon-pink) 0 8px,var(--neon-blue) 8px 16px,var(--neon-green) 16px 24px);}
@@ -42,8 +148,8 @@ h2{font-family:var(--font-head);font-size:14px;line-height:1.6;color:var(--neon-
 label.lb{display:block;font-size:15px;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:1px}
 input.f{
   width:100%;min-height:42px;padding:8px 12px;border:3px solid #000;border-radius:0;
-  background:#0f0c0f;color:var(--text);font-family:var(--font-body);font-size:19px;
-  box-shadow:2px 2px 0 #20404a inset;
+  background:#080e18;color:var(--text);font-family:var(--font-body);font-size:19px;
+  box-shadow:2px 2px 0 var(--line) inset;
 }
 input.f:focus{outline:none;border-color:var(--neon-pink)}
 button.b{
@@ -69,7 +175,7 @@ button.b.wide{display:block;width:100%}
 
 /* economy bar */
 .econbar{display:flex;justify-content:space-between;align-items:center;font-size:15px;color:var(--muted);
-  border-top:2px dashed #20404a;padding-top:8px;margin-top:12px}
+  border-top:2px dashed var(--line);padding-top:8px;margin-top:12px}
 .econbar b{color:var(--neon-yellow)}
 
 /* HP bars — segmented 8-bit fighting-game style */
@@ -82,7 +188,7 @@ button.b.wide{display:block;width:100%}
   text-shadow:2px 2px 0 #000;pointer-events:none;animation:dmgFloat 1s ease forwards;z-index:5}
 @keyframes dmgFloat{0%{opacity:0;transform:translateY(0)}15%{opacity:1}100%{opacity:0;transform:translateY(-26px)}}
 .reveal{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 0;
-  background:#0f0c0f;border:2px dashed #20404a;margin:8px 0;animation:revealPop .3s ease}
+  background:#080e18;border:2px dashed var(--line);margin:8px 0;animation:revealPop .3s ease}
 .reveal-icon{width:34px;height:34px;display:inline-flex}
 .reveal-icon svg,.reveal-icon img{width:100%;height:100%}
 .reveal-vs{font-family:var(--font-head);font-size:11px;color:var(--neon-yellow)}
@@ -92,7 +198,7 @@ button.b.wide{display:block;width:100%}
 }
 .fname{display:flex;justify-content:space-between;font-size:16px;margin-bottom:4px}
 .fname .nm{font-weight:400}
-.hpouter{height:18px;background:#0f0c0f;border:3px solid #000;border-radius:0;overflow:hidden;position:relative}
+.hpouter{height:18px;background:#080e18;border:3px solid #000;border-radius:0;overflow:hidden;position:relative}
 .hpinner{height:100%;background:var(--neon-green);transition:width .4s steps(10)}
 .hpinner::after{content:"";position:absolute;inset:0;
   background:repeating-linear-gradient(90deg, transparent 0 7px, #000 7px 8px);}
@@ -104,8 +210,8 @@ button.b.wide{display:block;width:100%}
 .wheel{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:12px}
 .wbtn{
   aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  background:#0f0c0f;border:3px solid #000;border-radius:0;cursor:pointer;position:relative;
-  box-shadow:3px 3px 0 #000, 0 0 0 1px #20404a inset;
+  background:#080e18;border:3px solid #000;border-radius:0;cursor:pointer;position:relative;
+  box-shadow:3px 3px 0 #000, 0 0 0 1px var(--line) inset;
 }
 .wbtn .ic{width:26px;height:26px}
 .wbtn .nm{font-size:12px;color:var(--muted);text-transform:uppercase}
@@ -121,8 +227,8 @@ button.b.wide{display:block;width:100%}
 .skingrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .skinbtn{
   aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  background:#0f0c0f;border:3px solid #000;border-radius:0;cursor:pointer;position:relative;padding:2px;
-  box-shadow:3px 3px 0 #000, 0 0 0 1px #20404a inset;
+  background:#080e18;border:3px solid #000;border-radius:0;cursor:pointer;position:relative;padding:2px;
+  box-shadow:3px 3px 0 #000, 0 0 0 1px var(--line) inset;
 }
 .skinbtn .ic{width:24px;height:24px}
 .skinbtn .nm{font-size:10px;color:var(--muted);text-transform:uppercase;text-align:center;line-height:1.1}
@@ -132,9 +238,9 @@ button.b.wide{display:block;width:100%}
 .skinbtn.locked .ic{filter:grayscale(1)}
 .skin-badge{display:inline-flex;vertical-align:middle;margin-right:4px}
 .skin-badge svg{width:18px;height:18px;vertical-align:middle}
-.turninfo{padding:8px 10px;background:#0f0c0f;border:2px dashed #20404a;border-radius:0;font-size:16px;margin:8px 0}
+.turninfo{padding:8px 10px;background:#080e18;border:2px dashed var(--line);border-radius:0;font-size:16px;margin:8px 0}
 .cd{font-family:var(--font-head);font-size:11px;color:var(--neon-blue)}
-.chat{max-height:14vh;overflow-y:auto;padding:6px;font-size:15px;line-height:1.4;background:#0f0c0f;border:2px solid #20404a;border-radius:0;margin-top:8px}
+.chat{max-height:14vh;overflow-y:auto;padding:6px;font-size:15px;line-height:1.4;background:#080e18;border:2px solid var(--line);border-radius:0;margin-top:8px}
 .msg{color:var(--muted)}
 
 /* lootbox */
@@ -153,10 +259,12 @@ button.b.wide{display:block;width:100%}
 </style>
 </head>
 <body>
+<canvas id="bgcanvas"></canvas><div class="bgveil"></div>
+<div id="glitchbar"></div>
 
 <!-- ============ MENU ============ -->
 <div class="card" id="scr-menu">
-  <h1>СТРИТФАЙТ 98</h1>
+  <h1 class="glitch" data-text="СТРИТФАЙТ 98">СТРИТФАЙТ 98</h1>
   <div class="tag">камень • ножницы • бумага • ящерица • спок</div>
   <label class="lb" for="nick">Позывной</label>
   <input class="f" id="nick" maxlength="14" autocomplete="off" placeholder="Аноним">
@@ -195,7 +303,7 @@ button.b.wide{display:block;width:100%}
     <b>Ничья</b>: если оба выбрали одно и то же оружие — урона нет, раунд переигрывается.<br><br>
     <b>Жетоны</b> начисляются за победы и поражения, тратятся на лутбоксы — реальных денег в игре нет.
   </div>
-  <button class="b wide mt" onclick="show('menu')">Назад</button>
+  <button class="b wide mt" onclick="closeRules()">Назад</button>
 </div>
 
 <!-- ============ SHOP ============ -->
@@ -240,6 +348,7 @@ button.b.wide{display:block;width:100%}
   </div>
   <div class="turninfo" id="turnbanner">Выберите оружие! <span class="cd" id="movecd"></span></div>
   <div class="wheel" id="wheel"></div>
+  <div class="cheat" id="cheatsheet"></div>
   <div class="chat" id="chat"></div>
 </div>
 
@@ -288,17 +397,45 @@ const VERBS = {
 };
 const ACC_LABELS = { rock:'Камень', paper:'Бумагу', scissors:'Ножницы', lizard:'Ящерицу', spock:'Спока' };
 const RARITY_ICON = { common:'●', rare:'◆', epic:'★', legendary:'✦' };
+// Куда вернуться из правил: если открыли из боя — назад в бой, а не в меню
+// (иначе кажется, будто матч сбросился, хотя соединение живо).
+let rulesReturnTo = 'menu';
+function currentScreen(){
+  for(const s of screens){ const el=$("scr-"+s); if(el && !el.classList.contains('hidden')) return s; }
+  return 'menu';
+}
+function closeRules(){
+  const target = rulesReturnTo === 'rules' ? 'menu' : rulesReturnTo;
+  show(target);
+  if(target === 'battle' && st) render(); // вернуть актуальные HP/таймер, бой не прерывался
+}
 function openRules(){
+  rulesReturnTo = currentScreen();
   show('rules');
   const box = $('rulesChart'); box.innerHTML = '';
   WEAPONS.forEach(w=>{
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed #20404a';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line)';
     const beats = BEATS[w].map(o=>`${VERBS[w+'>'+o]} ${ACC_LABELS[o]}`).join(' и ');
     row.innerHTML = `<span style="flex:0 0 26px">${pixelSVG(w)}</span><span style="font-size:16px">${LABELS[w]} ${beats}</span>`;
     box.appendChild(row);
   });
 }
+// Компактная шпаргалка в бою: строка на каждое оружие — что оно бьёт.
+// Всегда на виду, чтобы не открывать правила посреди раунда.
+function renderCheatSheet(){
+  const box = $("cheatsheet"); if(!box || box.dataset.done === '1') return;
+  box.innerHTML = '';
+  WEAPONS.forEach(w=>{
+    const row = document.createElement('div');
+    row.className = 'cheat-row';
+    const beats = BEATS[w].map(o=>`<span class="cheat-ic">${pixelSVG(o)}</span>`).join('');
+    row.innerHTML = `<span class="cheat-ic">${pixelSVG(w)}</span><span class="cheat-arrow">&gt;</span>${beats}`;
+    box.appendChild(row);
+  });
+  box.dataset.done = '1'; // рисуем один раз — содержимое статично
+}
+
 function openHistory(){
   show('history');
   $("historyList").innerHTML = '<div class="hint">Загрузка…</div>';
@@ -311,7 +448,7 @@ function renderHistory(history){
   box.innerHTML = '';
   history.forEach(h=>{
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed #20404a;font-size:16px';
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line);font-size:16px';
     const outcome = h.won ? '<b style="color:var(--neon-green)">Победа</b>' : '<b style="color:var(--danger)">Поражение</b>';
     const when = new Date(h.at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     row.innerHTML = `<span>${outcome} vs ${esc(h.opponent)}</span><span style="color:var(--muted);font-size:14px">${h.rounds} р. · ${when}</span>`;
@@ -517,6 +654,7 @@ function render(){
 
 function renderBattle(){
   show("battle");
+  renderCheatSheet();
   $("battletitle").textContent = "Раунд " + st.round;
   $("myname").innerHTML = `<span class="skin-badge">${st.you.skin ? mercIcon(st.you.skin.id) : mercIcon('rookie')}</span>` + esc(st.you.nick) + " (вы)";
   $("oppname").innerHTML = st.opponent ? (`<span class="skin-badge">${st.opponent.skin ? mercIcon(st.opponent.skin.id) : mercIcon('rookie')}</span>` + esc(st.opponent.nick)) : "…";
@@ -628,7 +766,143 @@ function copyInvite(){
 }
 
 /* ================= init ================= */
+/* ============ процедурный фон: пиксельный киберпанк-город ============
+ * Рисуем в НИЗКОМ разрешении (180x320) и растягиваем через CSS с
+ * image-rendering:pixelated — так пиксели получаются настоящими, крупными,
+ * а не имитацией. Каждый заход генерирует новый город: другой силуэт,
+ * окна, вывески, погода. */
+function generateCityBackground(){
+  const cv = $("bgcanvas"); if(!cv || !cv.getContext) return;
+  const W = 180, H = 320;
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  const R = (a,b)=>a+Math.random()*(b-a);
+  const RI = (a,b)=>Math.floor(R(a,b+0.999));
+  const pick = arr => arr[RI(0,arr.length-1)];
+
+  // Случайное «настроение» неба — но всегда в рамках палитры Blade Runner
+  const moods = [
+    { top:'#050912', mid:'#0d2b3a', glow:'#3ec8e8' }, // холодная циановая ночь
+    { top:'#070610', mid:'#33162c', glow:'#e8437a' }, // маджента-смог
+    { top:'#060a12', mid:'#3a2410', glow:'#f2a541' }, // янтарная пыль
+    { top:'#040a10', mid:'#10303a', glow:'#2dd4a7' }, // тил-туман
+  ];
+  const mood = pick(moods);
+
+  // 1. Небо — вертикальный градиент от почти чёрного к зареву у горизонта
+  const sky = g.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0, mood.top);
+  sky.addColorStop(0.62, mood.mid);
+  sky.addColorStop(1, mood.top);
+  g.fillStyle = sky; g.fillRect(0,0,W,H);
+
+  // 2. Звёзды (в верхней части, редкие)
+  const starCount = RI(20,60);
+  for(let i=0;i<starCount;i++){
+    const x=RI(0,W-1), y=RI(0,Math.floor(H*0.45));
+    g.fillStyle = Math.random()<0.15 ? mood.glow : 'rgba(220,240,255,'+R(0.25,0.8).toFixed(2)+')';
+    g.fillRect(x,y,1,1);
+  }
+
+  // 3. Иногда — луна/солнце-диск как в кадре Blade Runner
+  if(Math.random()<0.65){
+    const mx=RI(20,W-20), my=RI(24,Math.floor(H*0.34)), mr=RI(7,16);
+    for(let y=-mr;y<=mr;y++) for(let x=-mr;x<=mr;x++){
+      if(x*x+y*y<=mr*mr){
+        const d=Math.sqrt(x*x+y*y)/mr;
+        g.fillStyle = d>0.82 ? mood.glow : (Math.random()<0.08 ? mood.glow : '#e9f3f7');
+        g.globalAlpha = d>0.82 ? 0.5 : 0.92;
+        g.fillRect(mx+x,my+y,1,1);
+      }
+    }
+    g.globalAlpha=1;
+  }
+
+  // 4. Зарево у горизонта
+  const horizonY = Math.floor(H*R(0.52,0.62));
+  const glow = g.createLinearGradient(0,horizonY-40,0,horizonY+10);
+  glow.addColorStop(0,'rgba(0,0,0,0)');
+  glow.addColorStop(1, mood.glow);
+  g.globalAlpha=0.28; g.fillStyle=glow; g.fillRect(0,horizonY-40,W,50); g.globalAlpha=1;
+
+  // 5. Слои города: дальний светлее/размытее, ближний — тёмный силуэт
+  const layers = [
+    { base:'#0b1c28', y:horizonY,      minH:14, maxH:44, w:[6,16], winChance:0.16, winColors:[mood.glow,'#e9f3f7'] },
+    { base:'#08131d', y:horizonY+16,   minH:22, maxH:70, w:[8,22], winChance:0.13, winColors:[mood.glow,'#f2a541'] },
+    { base:'#050b12', y:horizonY+44,   minH:36, maxH:110,w:[12,30],winChance:0.10, winColors:['#f2a541','#3ec8e8'] },
+  ];
+  layers.forEach(L=>{
+    let x = -RI(0,8);
+    while(x < W){
+      const bw = RI(L.w[0],L.w[1]);
+      const bh = RI(L.minH,L.maxH);
+      const by = L.y - bh;
+      g.fillStyle = L.base;
+      g.fillRect(x,by,bw,H-by);
+      // антенна/шпиль
+      if(Math.random()<0.28 && bw>7){
+        const ax = x+Math.floor(bw/2);
+        const ah = RI(4,12);
+        g.fillRect(ax, by-ah, 1, ah);
+        if(Math.random()<0.5){ g.fillStyle = '#e8437a'; g.fillRect(ax, by-ah-1, 1, 1); } // красный маяк
+      }
+      // окна сеткой
+      for(let wy=by+3; wy<H-2; wy+=3){
+        for(let wx=x+2; wx<x+bw-1; wx+=3){
+          if(Math.random()<L.winChance){
+            g.fillStyle = pick(L.winColors);
+            g.globalAlpha = R(0.35,0.95);
+            g.fillRect(wx,wy,1,1);
+            g.globalAlpha = 1;
+          }
+        }
+      }
+      // неоновая вывеска на фасаде
+      if(Math.random()<0.18 && bw>=10 && bh>20){
+        const sy = by + RI(5, Math.max(6, bh-10));
+        const sw = RI(3, Math.max(3, bw-4));
+        g.fillStyle = pick([mood.glow,'#e8437a','#3ec8e8','#f2a541']);
+        g.globalAlpha = 0.85;
+        g.fillRect(x+2, sy, sw, Math.random()<0.5?1:2);
+        g.globalAlpha = 1;
+      }
+      x += bw + RI(1,4);
+    }
+  });
+
+  // 6. Погода: дождь (как в Blade Runner) — не всегда
+  if(Math.random()<0.55){
+    const drops = RI(40,110);
+    g.strokeStyle = 'rgba(180,220,240,0.20)';
+    g.lineWidth = 1;
+    for(let i=0;i<drops;i++){
+      const x=RI(0,W), y=RI(0,H), len=RI(3,8);
+      g.beginPath(); g.moveTo(x,y); g.lineTo(x-1,y+len); g.stroke();
+    }
+  }
+
+  // 7. Лёгкий шум-дизеринг, чтобы градиенты не были «пластиковыми»
+  for(let i=0;i<900;i++){
+    const x=RI(0,W-1), y=RI(0,H-1);
+    g.fillStyle = Math.random()<0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
+    g.fillRect(x,y,1,1);
+  }
+}
+
+/* Случайные помехи: короткий глитч раз в 6–16 секунд. Редко и коротко —
+   чтобы читалось как атмосфера, а не как сломанный интерфейс. */
+function scheduleGlitch(){
+  const delay = 6000 + Math.random()*10000;
+  setTimeout(()=>{
+    document.body.classList.add('glitching');
+    setTimeout(()=>document.body.classList.remove('glitching'), 600);
+    scheduleGlitch();
+  }, delay);
+}
+
 (function init(){
+  generateCityBackground();
+  if(!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) scheduleGlitch();
   const giftEl = $("lootboxicon"); if(giftEl) giftEl.innerHTML = pixelSVG('gift');
   const params=new URLSearchParams(location.search);
   const roomParam=(params.get("room")||params.get("tgWebAppStartParam")||"").toUpperCase();
