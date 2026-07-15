@@ -206,6 +206,7 @@ function nextRound(room) {
   room.round += 1;
   room.moves = {};
   clearTimer(room);
+  if (room.botTimer) { clearTimeout(room.botTimer); room.botTimer = null; }
   room.deadline = now() + T_MOVE;
   room.timer = setTimeout(() => forceRandomMoves(room), T_MOVE);
   syncAll(room);
@@ -213,21 +214,25 @@ function nextRound(room) {
 }
 
 // Планирует ход бота (если в комнате есть бот) с человеческой задержкой.
-// Бот выбирает оружие по своей эвристике на основе истории ходов живого
-// соперника — он НЕ подсматривает текущий ход игрока.
+// Ход привязан к конкретному раунду (roundAtSchedule): если к моменту
+// срабатывания таймера раунд уже сменился, ход отменяется — это убирает гонку,
+// из-за которой бот мог «зависнуть» (AFK) на некоторых раундах.
 function scheduleBotMove(room) {
   if (room.phase !== 'battle') return;
   const botP = room.players.find(p => p.isBot);
   if (!botP) return;
   const human = other(room, botP.id);
-  const delay = bot.moveDelayMs();
-  setTimeout(() => {
-    if (room.phase !== 'battle' || room.moves[botP.id]) return; // раунд уже мог закрыться
+  const roundAtSchedule = room.round;
+  const delay = Math.max(300, Math.min(bot.moveDelayMs(), T_MOVE - 1000));
+  room.botTimer = setTimeout(() => {
+    room.botTimer = null;
+    // Отменяем ход, если раунд уже сменился, бой кончился или бот уже походил.
+    if (room.phase !== 'battle' || room.round !== roundAtSchedule || room.moves[botP.id]) return;
     const weapon = bot.chooseWeapon(human ? (room.humanHistory || []) : []);
     room.moves[botP.id] = weapon;
     syncAll(room); // игрок видит "соперник сделал выбор" — как при живом сопернике
     resolveIfReady(room);
-  }, Math.min(delay, T_MOVE - 500)); // гарантируем, что бот успевает до таймаута раунда
+  }, delay);
 }
 
 function forceRandomMoves(room) {
@@ -503,7 +508,7 @@ function onDisconnect(ws) {
 }
 
 /* ---------------- wiring ---------------- */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 const HTTP_RATE_LIMIT = +process.env.HTTP_RATE_LIMIT || 120;
 const HTTP_RATE_WINDOW_MS = +process.env.HTTP_RATE_WINDOW_MS || 60000;
 const httpRateLimiter = createRateLimiter(HTTP_RATE_LIMIT, HTTP_RATE_WINDOW_MS);

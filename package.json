@@ -7,6 +7,8 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@fontsource/handjet": "^5.2.7",
+    "@fontsource/press-start-2p": "^5.2.7",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
     "ws": "^8.18.0"
