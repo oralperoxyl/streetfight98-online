@@ -125,6 +125,32 @@ body.glitching .card{ animation:cardJitter .22s steps(2) 2; }
   body.glitching #glitchbar,body.glitching .card,.glitch::before,.glitch::after{animation:none}
   .glitch::before,.glitch::after{opacity:0}
 }
+/* Профиль */
+.prof-head{display:flex;gap:10px;align-items:flex-start;padding-bottom:10px;border-bottom:2px dashed var(--line)}
+.prof-ava{width:52px;height:52px;flex:0 0 52px;border:3px solid #000;box-shadow:3px 3px 0 #000;background:#080e18;display:inline-block}
+.prof-ava-px{display:inline-flex;align-items:center;justify-content:center;padding:6px}
+.prof-ava-px svg,.prof-ava-px img{width:100%;height:100%}
+.prof-id{flex:1;min-width:0}
+.prof-name{font-family:var(--font-head);font-size:12px;line-height:1.5;color:var(--neon-yellow);text-shadow:2px 2px 0 #000;word-break:break-word}
+.prof-tag{font-size:16px;color:var(--neon-blue);margin-top:2px}
+.prof-bound{font-size:14px;line-height:1.3;margin-top:5px}
+.prof-bound.ok{color:var(--neon-green)}
+.prof-bound.warn{color:var(--neon-yellow)}
+.prof-stats{margin-top:10px}
+.stat{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:17px}
+.stat span{color:var(--muted)}
+.stat b{color:var(--text);text-align:right}
+.prof-fav{width:16px;height:16px;display:inline-flex;vertical-align:middle;margin-right:4px}
+.prof-fav svg,.prof-fav img{width:100%;height:100%}
+.prof-sub{font-family:var(--font-head);font-size:10px;color:var(--neon-pink);margin:14px 0 6px;text-shadow:2px 2px 0 #000}
+/* Топ игроков */
+.toprow{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--line);font-size:17px}
+.toprow.me{background:rgba(62,200,232,.12);box-shadow:0 0 0 2px var(--neon-blue) inset}
+.toprow .tp{flex:0 0 26px;font-family:var(--font-head);font-size:9px;color:var(--muted)}
+.toprow .tn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toprow .tr{flex:0 0 54px;text-align:right;font-weight:700}
+.toprow .tw{flex:0 0 58px;text-align:right;color:var(--muted);font-size:15px}
+
 /* Шпаргалка «кто кого бьёт» — всегда на виду в бою */
 .cheat{
   display:grid;grid-template-columns:repeat(2,1fr);gap:2px 10px;margin-top:8px;
@@ -276,16 +302,29 @@ button.b.wide{display:block;width:100%}
   </div>
   <button class="b wide mt" onclick="show('shop')" id="lootboxbtn"><span id="lootboxicon" style="display:inline-flex;vertical-align:middle;margin-right:6px"></span>Лутбоксы</button>
   <button class="b blue wide mt" onclick="openRules()">Правила игры</button>
-  <button class="b wide mt" onclick="openHistory()">История матчей</button>
+  <div class="row mt">
+    <button class="b" onclick="openProfile()">Профиль</button>
+    <button class="b" onclick="openLeaderboard()">Топ игроков</button>
+  </div>
   <div class="hint" id="menuhint">Быстрый бой сведёт со случайным соперником. Или пришлите код другу.</div>
   <div class="econbar" id="econbar-menu"></div>
 </div>
 
-<!-- ============ HISTORY ============ -->
-<div class="card hidden" id="scr-history">
-  <h2>История матчей</h2>
-  <div class="hint" style="margin:0 0 10px">Последние 10 боёв.</div>
+<!-- ============ PROFILE ============ -->
+<div class="card hidden" id="scr-profile">
+  <h2>Профиль</h2>
+  <div class="prof-head" id="profHead"></div>
+  <div class="prof-stats" id="profStats"></div>
+  <div class="prof-sub">Последние матчи</div>
   <div id="historyList"></div>
+  <button class="b wide mt" onclick="show('menu')">Назад</button>
+</div>
+
+<!-- ============ LEADERBOARD ============ -->
+<div class="card hidden" id="scr-top">
+  <h2>Топ игроков</h2>
+  <div class="hint" style="margin:0 0 10px">По рейтингу Эло. Побеждать сильных выгоднее, чем слабых.</div>
+  <div id="topList"></div>
   <button class="b wide mt" onclick="show('menu')">Назад</button>
 </div>
 
@@ -436,11 +475,84 @@ function renderCheatSheet(){
   box.dataset.done = '1'; // рисуем один раз — содержимое статично
 }
 
-function openHistory(){
-  show('history');
+// ===== Профиль =====
+// Личность берём из Telegram, если игра открыта как Mini App: имя и аватар.
+// Вне Telegram — аноним с локальным ключом, поэтому показываем это честно.
+function tgUser(){
+  return (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user : null;
+}
+function ratingTier(r){
+  if(r >= 1600) return { name:'Платина', color:'var(--text)' };
+  if(r >= 1400) return { name:'Золото',  color:'var(--neon-yellow)' };
+  if(r >= 1250) return { name:'Серебро', color:'#c0c0c0' };
+  if(r >= 1100) return { name:'Бронза',  color:'#cd7f32' };
+  return { name:'Новичок', color:'var(--muted)' };
+}
+function openProfile(){
+  show('profile');
+  renderProfile();
   $("historyList").innerHTML = '<div class="hint">Загрузка…</div>';
   if(!myKey) myKey = getKey();
   startNet(()=>ws.send(J({t:"get_history", key:myKey, initData:tgInitData()})));
+}
+function renderProfile(){
+  const u = tgUser();
+  const head = $("profHead");
+  const skinId = (econ && econ.equippedSkin) || 'rookie';
+  const avatar = (u && u.photo_url)
+    ? `<img src="${u.photo_url}" alt="" class="prof-ava">`
+    : `<span class="prof-ava prof-ava-px">${mercIcon(skinId)}</span>`;
+  const name = u ? esc([u.first_name, u.last_name].filter(Boolean).join(' ')) : esc((econ && econ.nick) || 'Аноним');
+  const link = u && u.username ? `<div class="prof-tag">@${esc(u.username)}</div>` : '';
+  const bound = u
+    ? `<div class="prof-bound ok">Аккаунт привязан к Telegram — прогресс сохраняется</div>`
+    : `<div class="prof-bound warn">Открыто вне Telegram: профиль привязан к этому браузеру. Откройте игру через бота, чтобы прогресс был вашим на любом устройстве.</div>`;
+  head.innerHTML = `${avatar}<div class="prof-id"><div class="prof-name">${name}</div>${link}${bound}</div>`;
+
+  if(!econ){ $("profStats").innerHTML=''; return; }
+  const total = (econ.wins||0) + (econ.losses||0);
+  const wr = total ? Math.round((econ.wins||0)/total*100) : 0;
+  const tier = ratingTier(econ.rating||0);
+  // Любимое оружие — по фактическому числу использований
+  let fav = null, favN = 0;
+  Object.entries(econ.weaponUses||{}).forEach(([w,n])=>{ if(n>favN){favN=n; fav=w;} });
+  const favHtml = fav ? `<span class="prof-fav">${pixelSVG(fav)}</span>${LABELS[fav]} (${favN})` : '—';
+  const unlocked = (econ.unlockedSkins||[]).length, allMercs = ALL_SKINS.length;
+
+  $("profStats").innerHTML = `
+    <div class="stat"><span>Рейтинг</span><b style="color:${tier.color}">${econ.rating} · ${tier.name}</b></div>
+    <div class="stat"><span>Побед / поражений</span><b>${econ.wins||0} / ${econ.losses||0}</b></div>
+    <div class="stat"><span>Винрейт</span><b>${total ? wr+'%' : '—'}</b></div>
+    <div class="stat"><span>Серия побед</span><b>${econ.streak||0}${econ.bestStreak ? ' (рекорд '+econ.bestStreak+')' : ''}</b></div>
+    <div class="stat"><span>Любимое оружие</span><b>${favHtml}</b></div>
+    <div class="stat"><span>Наёмники</span><b>${unlocked} / ${allMercs}</b></div>
+    <div class="stat"><span>Жетоны</span><b>${econ.tokens}</b></div>`;
+}
+
+// ===== Топ игроков =====
+function openLeaderboard(){
+  show('top');
+  $("topList").innerHTML = '<div class="hint">Загрузка…</div>';
+  if(!myKey) myKey = getKey();
+  startNet(()=>ws.send(J({t:"get_leaderboard", key:myKey, initData:tgInitData()})));
+}
+function renderLeaderboard(rows){
+  const box = $("topList");
+  if(!rows || !rows.length){
+    box.innerHTML = '<div class="hint">Пока пусто — сыграйте первый бой, чтобы попасть в таблицу.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  rows.forEach(r=>{
+    const row = document.createElement('div');
+    row.className = 'toprow' + (r.me ? ' me' : '');
+    const tier = ratingTier(r.rating);
+    row.innerHTML = `<span class="tp">${r.place}</span>
+      <span class="tn">${esc(r.nick)}</span>
+      <span class="tr" style="color:${tier.color}">${r.rating}</span>
+      <span class="tw">${r.wins}/${r.losses}</span>`;
+    box.appendChild(row);
+  });
 }
 function renderHistory(history){
   const box = $("historyList");
@@ -560,6 +672,7 @@ function handle(m){
       dlg("Тренировка", `Наёмник прокачан до уровня <b>${m.newLevel}</b>! Потрачено ${m.cost} жетонов.`, [{t:"Отлично"}]);
       break;
     case "history": renderHistory(m.history); break;
+    case "leaderboard": renderLeaderboard(m.rows); break;
     case "err":
       dlg("Ошибка", esc(m.text));
       if(m.fatal){ session=null; show("menu"); }
@@ -568,7 +681,7 @@ function handle(m){
 }
 
 /* ================= screens ================= */
-const screens=["menu","shop","rules","history","wait","battle"];
+const screens=["menu","shop","rules","profile","top","wait","battle"];
 function show(name){
   screens.forEach(s=>$("scr-"+s).classList.toggle("hidden", s!==name));
   if(name==="shop"){ myKey=getKey(); startNet(()=>ws.send(J({t:"identify",key:myKey,nick:myNick(),initData:tgInitData()}))); renderGearGrid(); }
